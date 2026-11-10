@@ -1,0 +1,424 @@
+{
+  "description": "TouchQue Actions management calls: what each SDK method must send. Run in order against testing/fake-touchque-api.mjs and compare the recorded call (GET /__test/calls, last entry) with `request`: method, path, query (as an object, order-free) and body (deep equal; absent means {} for writes and no body for reads). `args` are language-neutral; each SDK maps them to its own call (camelCase in Node/Go, snake_case keyword arguments in Python, named arguments or an options array in PHP). `status` is the fake API's HTTP status.",
+  "calls": [
+    {
+      "name": "deploy",
+      "args": {
+        "slug": "night-alert",
+        "trigger": "approval.decided",
+        "code": "exports.onExecute = async (event, api) => { api.notify.slack('hi'); };\n",
+        "secrets": [
+          "SLACK_WEBHOOK_URL"
+        ],
+        "name": "Night alert"
+      },
+      "request": {
+        "method": "PUT",
+        "path": "/actions/night-alert",
+        "body": {
+          "trigger": "approval.decided",
+          "code": "exports.onExecute = async (event, api) => { api.notify.slack('hi'); };\n",
+          "secrets": [
+            "SLACK_WEBHOOK_URL"
+          ],
+          "name": "Night alert"
+        }
+      },
+      "status": 201
+    },
+    {
+      "name": "deployTemplate",
+      "args": {
+        "slug": "tr-step-up",
+        "trigger": "login.request",
+        "template": {
+          "id": "block_or_step_up",
+          "params": {
+            "effect": "stepUp",
+            "when": {
+              "countries": [
+                "TR"
+              ]
+            }
+          }
+        },
+        "onFailure": "step_up"
+      },
+      "request": {
+        "method": "PUT",
+        "path": "/actions/tr-step-up",
+        "body": {
+          "trigger": "login.request",
+          "template": {
+            "id": "block_or_step_up",
+            "params": {
+              "effect": "stepUp",
+              "when": {
+                "countries": [
+                  "TR"
+                ]
+              }
+            }
+          },
+          "onFailure": "step_up"
+        }
+      },
+      "status": 201
+    },
+    {
+      "name": "deployLoosening",
+      "args": {
+        "slug": "office-skip",
+        "trigger": "login.request",
+        "code": "exports.onExecute = (e, api) => api.skipNumberMatch('office');\n",
+        "capabilities": [
+          "skip_number_match"
+        ],
+        "allowedHosts": [
+          "api.example.com"
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "path": "/actions/office-skip",
+        "body": {
+          "trigger": "login.request",
+          "code": "exports.onExecute = (e, api) => api.skipNumberMatch('office');\n",
+          "capabilities": [
+            "skip_number_match"
+          ],
+          "allowedHosts": [
+            "api.example.com"
+          ]
+        }
+      },
+      "status": 201,
+      "expect": {
+        "deployed": false,
+        "approval.required": true
+      }
+    },
+    {
+      "name": "list",
+      "args": {},
+      "request": {
+        "method": "GET",
+        "path": "/actions"
+      },
+      "status": 200
+    },
+    {
+      "name": "get",
+      "args": {
+        "slug": "night-alert"
+      },
+      "request": {
+        "method": "GET",
+        "path": "/actions/night-alert"
+      },
+      "status": 200
+    },
+    {
+      "name": "version",
+      "args": {
+        "slug": "night-alert",
+        "number": 1
+      },
+      "request": {
+        "method": "GET",
+        "path": "/actions/night-alert/versions/1"
+      },
+      "status": 200
+    },
+    {
+      "name": "update",
+      "args": {
+        "slug": "night-alert",
+        "enabled": false
+      },
+      "request": {
+        "method": "PATCH",
+        "path": "/actions/night-alert",
+        "body": {
+          "enabled": false
+        }
+      },
+      "status": 200
+    },
+    {
+      "name": "rollback",
+      "args": {
+        "slug": "night-alert",
+        "version": 1
+      },
+      "request": {
+        "method": "POST",
+        "path": "/actions/night-alert/rollback",
+        "body": {
+          "version": 1
+        }
+      },
+      "status": 200
+    },
+    {
+      "name": "rollbackPrevious",
+      "args": {
+        "slug": "night-alert"
+      },
+      "request": {
+        "method": "POST",
+        "path": "/actions/night-alert/rollback",
+        "body": {}
+      },
+      "status": 200
+    },
+    {
+      "name": "test",
+      "args": {
+        "trigger": "login.request",
+        "code": "exports.onExecute = (e, api) => api.deny('x');\n",
+        "eventId": "evt_1"
+      },
+      "request": {
+        "method": "POST",
+        "path": "/actions/test",
+        "body": {
+          "trigger": "login.request",
+          "code": "exports.onExecute = (e, api) => api.deny('x');\n",
+          "eventId": "evt_1"
+        }
+      },
+      "status": 200
+    },
+    {
+      "name": "testDeployed",
+      "args": {
+        "slug": "tr-step-up",
+        "event": {
+          "client": {
+            "country": "TR"
+          }
+        }
+      },
+      "request": {
+        "method": "POST",
+        "path": "/actions/test",
+        "body": {
+          "slug": "tr-step-up",
+          "event": {
+            "client": {
+              "country": "TR"
+            }
+          }
+        }
+      },
+      "status": 200
+    },
+    {
+      "name": "dryRun",
+      "args": {
+        "trigger": "login.request",
+        "code": "exports.onExecute = (e, api) => api.requirePasskey('all');\n",
+        "replaces": "tr-step-up",
+        "limit": 100
+      },
+      "request": {
+        "method": "POST",
+        "path": "/actions/dry-run",
+        "body": {
+          "trigger": "login.request",
+          "code": "exports.onExecute = (e, api) => api.requirePasskey('all');\n",
+          "replaces": "tr-step-up",
+          "limit": 100
+        }
+      },
+      "status": 200
+    },
+    {
+      "name": "events",
+      "args": {
+        "trigger": "login.request",
+        "limit": 5
+      },
+      "request": {
+        "method": "GET",
+        "path": "/actions/events",
+        "query": {
+          "trigger": "login.request",
+          "limit": "5"
+        }
+      },
+      "status": 200
+    },
+    {
+      "name": "logs",
+      "args": {
+        "slug": "night-alert",
+        "limit": 10
+      },
+      "request": {
+        "method": "GET",
+        "path": "/actions/night-alert/logs",
+        "query": {
+          "limit": "10"
+        }
+      },
+      "status": 200
+    },
+    {
+      "name": "metrics",
+      "args": {
+        "slug": "night-alert",
+        "window": "7d"
+      },
+      "request": {
+        "method": "GET",
+        "path": "/actions/night-alert/metrics",
+        "query": {
+          "window": "7d"
+        }
+      },
+      "status": 200
+    },
+    {
+      "name": "triggers",
+      "args": {},
+      "request": {
+        "method": "GET",
+        "path": "/actions/triggers"
+      },
+      "status": 200
+    },
+    {
+      "name": "templates",
+      "args": {},
+      "request": {
+        "method": "GET",
+        "path": "/actions/templates"
+      },
+      "status": 200
+    },
+    {
+      "name": "renderTemplate",
+      "args": {
+        "id": "alert",
+        "trigger": "approval.decided",
+        "params": {
+          "channel": "slack",
+          "when": {
+            "countries": [
+              "TR"
+            ]
+          }
+        }
+      },
+      "request": {
+        "method": "POST",
+        "path": "/actions/templates/alert/render",
+        "body": {
+          "trigger": "approval.decided",
+          "params": {
+            "channel": "slack",
+            "when": {
+              "countries": [
+                "TR"
+              ]
+            }
+          }
+        }
+      },
+      "status": 200
+    },
+    {
+      "name": "setSecret",
+      "args": {
+        "name": "SLACK_WEBHOOK_URL",
+        "value": "https://hooks.slack.com/services/T000/B000/x"
+      },
+      "request": {
+        "method": "PUT",
+        "path": "/actions/secrets/SLACK_WEBHOOK_URL",
+        "body": {
+          "value": "https://hooks.slack.com/services/T000/B000/x"
+        }
+      },
+      "status": 201
+    },
+    {
+      "name": "listSecrets",
+      "args": {},
+      "request": {
+        "method": "GET",
+        "path": "/actions/secrets"
+      },
+      "status": 200
+    },
+    {
+      "name": "deleteSecret",
+      "args": {
+        "name": "SLACK_WEBHOOK_URL"
+      },
+      "request": {
+        "method": "DELETE",
+        "path": "/actions/secrets/SLACK_WEBHOOK_URL"
+      },
+      "status": 200
+    },
+    {
+      "name": "delete",
+      "args": {
+        "slug": "office-skip"
+      },
+      "request": {
+        "method": "DELETE",
+        "path": "/actions/office-skip"
+      },
+      "status": 200
+    }
+  ],
+  "context": {
+    "description": "`context` on a login request and a risk check is passed through as given (a JSON object).",
+    "loginRequest": {
+      "args": {
+        "externalUsername": "ctx@example.com",
+        "type": "LOGIN",
+        "context": {
+          "roles": [
+            "admin"
+          ],
+          "amount": 2500
+        }
+      },
+      "body": {
+        "externalUsername": "ctx@example.com",
+        "type": "LOGIN",
+        "context": {
+          "roles": [
+            "admin"
+          ],
+          "amount": 2500
+        }
+      }
+    },
+    "riskCheck": {
+      "args": {
+        "externalUsername": "ctx@example.com",
+        "type": "LOGIN",
+        "context": {
+          "roles": [
+            "admin"
+          ]
+        }
+      },
+      "body": {
+        "externalUsername": "ctx@example.com",
+        "type": "LOGIN",
+        "context": {
+          "roles": [
+            "admin"
+          ]
+        }
+      }
+    }
+  }
+}

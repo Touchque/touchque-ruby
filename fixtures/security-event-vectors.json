@@ -1,0 +1,238 @@
+{
+  "issuer": "https://sso.touchque.example",
+  "audience": "https://receiver.example.com",
+  "jwks": {
+    "keys": [
+      {
+        "kty": "RSA",
+        "n": "qiT-kbe18z5eh7C5PU2xmABcDvRtIwfh6dL0Yt8Vpat3EGAfgvHZpIg_zmyKofNqDP-XWoFu8hT92kRXaSj9wHgQPHw9fukPFL0Uox95e_hoHNaOyboWxV9VBktfiefAR9_igTm4JWh3pEvBuaTaC7nwiO7p5t3d4UKr1k71lBZHlch14rbZPzBV3UbPE3u8JEzcffQ6DyuXHRy0k3li2NBvhC8lhho0erjXclnTnaqZCnBniUWS5vet3_b5SMPCWdXO-XuQyRN0M-efUiJr2dJB4GGv8OxqH0KitQNLopw4yyMPxwovw_kmyrHiOLK5CI7LnSZ5k7HVP7rdmVfXFQ",
+        "e": "AQAB",
+        "kid": "tq-ssf-1",
+        "alg": "RS256",
+        "use": "sig"
+      }
+    ]
+  },
+  "valid": [
+    {
+      "name": "session-revoked",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMzAyNzg1OGItYjlkNi00MWMwLWFjNjUtY2MwMDQ2NzYwOWIyIiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvc2Vzc2lvbi1yZXZva2VkIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMCwiaW5pdGlhdGluZ19lbnRpdHkiOiJwb2xpY3kiLCJyZWFzb25fYWRtaW4iOnsiZW4iOiJUaGUgcGVyc29uIHNhaWQgYSBzaWduLWluIHdhcyBub3QgdGhlaXJzIn19fSwidHhuIjoiSzdQMlFYIn0.hnJpFtW6LVGb8uPfUkLt6Ibx1FxzVyf5aQuiuOoW97YF1CEtlmAkBtgbxHgWvSKRpaCJ7or32-9rhqcR-1SubG2i3FR8sXmEii4AcixbLW_bzShhE9ELBbFrHvQ5IoqZjeASPfY6z_cfrfxAb8oFBphEPswHFa04WzskRu7bYEfKTO0Zyr6UQl4mViK-NadG7w87TtGkBrEfSrCsz1Wx25EdzUR-tMOEfo6BNefktLkL2mNIXIXGQA8k1vYcB-9WuMOiG6RaRmj231z9YVAXRNeUs6Ga1R-yRa9oZNpoVbf7lzWv0TuDElRh0F1JxiEGrAlk0zZGugaPF2eR3hRJKA",
+      "expect": {
+        "jti": "3027858b-b9d6-41c0-ac65-cc00467609b2",
+        "issuer": "https://sso.touchque.example",
+        "audience": [
+          "https://receiver.example.com"
+        ],
+        "issuedAt": 1793500000,
+        "txn": "K7P2QX",
+        "subject": {
+          "format": "email",
+          "email": "ada@acme.example"
+        },
+        "type": "https://schemas.openid.net/secevent/caep/event-type/session-revoked",
+        "name": "session-revoked",
+        "claims": {
+          "event_timestamp": 1793500000,
+          "initiating_entity": "policy",
+          "reason_admin": {
+            "en": "The person said a sign-in was not theirs"
+          }
+        }
+      }
+    },
+    {
+      "name": "credential-change",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMzNkYzA2Y2QtYTNkYi00YzM2LWE4MTUtOTFlMzRmNTg5MzA0IiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvY3JlZGVudGlhbC1jaGFuZ2UiOnsiZXZlbnRfdGltZXN0YW1wIjoxNzkzNTAwMDAwLCJpbml0aWF0aW5nX2VudGl0eSI6InVzZXIiLCJjcmVkZW50aWFsX3R5cGUiOiJwYXNzd29yZCIsImNoYW5nZV90eXBlIjoidXBkYXRlIn19fQ.L9AdmBz6mTLV24fIUxfwXlb4UYSvhdxgFluJVwmu2HaalgjioCwlVKkTTHPlTKSS80e0zdI-49VEk06Lmql8S5c8HsJudMkvQM3cFC1bX6Ws5qb2FMNn8DNs2Em3Uh8X4MOfswqdI7JYgVkOhv9earYo6BR-HY-s7dlY0uQfGpiR8GdeNJqRjOszqMs8M5qrXaKReQQzKH1Q0oDr1P5LvoiHG3B5jDZiAQC5nIO0SXZhIaz6PdBeffpw0KtAOxOpDE6YwivWFs_K6AcoVKOazg25rS8N2avGC5TDF2BGHgFUFwals_41tEyGn6-Zo-RT_JSXzGyLZ-4wPB8PMHgCgw",
+      "expect": {
+        "jti": "33dc06cd-a3db-4c36-a815-91e34f589304",
+        "issuer": "https://sso.touchque.example",
+        "audience": [
+          "https://receiver.example.com"
+        ],
+        "issuedAt": 1793500000,
+        "txn": null,
+        "subject": {
+          "format": "email",
+          "email": "ada@acme.example"
+        },
+        "type": "https://schemas.openid.net/secevent/caep/event-type/credential-change",
+        "name": "credential-change",
+        "claims": {
+          "event_timestamp": 1793500000,
+          "initiating_entity": "user",
+          "credential_type": "password",
+          "change_type": "update"
+        }
+      }
+    },
+    {
+      "name": "device-compliance-change",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiZmZlNzVjZmQtODVlNy00ZTg0LWIyMDEtNTQxYjYyNmYwMDA2IiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvZGV2aWNlLWNvbXBsaWFuY2UtY2hhbmdlIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMCwiaW5pdGlhdGluZ19lbnRpdHkiOiJwb2xpY3kiLCJwcmV2aW91c19zdGF0dXMiOiJjb21wbGlhbnQiLCJjdXJyZW50X3N0YXR1cyI6Im5vdC1jb21wbGlhbnQifX19.kjFqIt9mIYGy4pFBRRDuisiEF1cIZjiImvqc9E_sUgHQaSWIYrar0E0iEK9dDF1GobAZIF5llHr_mUd4ZN0ZB3VhTpvoey3gdaL0Uy3dfWaSL5ylddp-0pqYZyHWMgQTO7XtOWm_EZTeIi6bG6UxElqpbhevxMXsGFAyrq5fqc3d5tj15sHCLPeZ0aaEZlfBDwdIVUmzFl-wp2J7zkGdOIfhBGX0H_5ZUqP03csPdCFfHMhfNLaiLuyVE2-I5BxcRVArHy54N3bqgsnCorl5QIxKG1x59Rmrg8vyx2BKjKgh0CzCipKnJKIe0RnX4t2oLssgO_ZvcaSHrCBa753CGA",
+      "expect": {
+        "jti": "ffe75cfd-85e7-4e84-b201-541b626f0006",
+        "issuer": "https://sso.touchque.example",
+        "audience": [
+          "https://receiver.example.com"
+        ],
+        "issuedAt": 1793500000,
+        "txn": null,
+        "subject": {
+          "format": "email",
+          "email": "ada@acme.example"
+        },
+        "type": "https://schemas.openid.net/secevent/caep/event-type/device-compliance-change",
+        "name": "device-compliance-change",
+        "claims": {
+          "event_timestamp": 1793500000,
+          "initiating_entity": "policy",
+          "previous_status": "compliant",
+          "current_status": "not-compliant"
+        }
+      }
+    },
+    {
+      "name": "account-disabled",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMWRhMzg5NjMtNjNhMS00MmIyLWFkZDgtNDFhNWQ0ZDQ3MjU1IiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOlsiaHR0cHM6Ly9yZWNlaXZlci5leGFtcGxlLmNvbSIsImh0dHBzOi8vb3RoZXIuZXhhbXBsZSJdLCJzdWJfaWQiOnsiZm9ybWF0IjoiZW1haWwiLCJlbWFpbCI6ImFkYUBhY21lLmV4YW1wbGUifSwiZXZlbnRzIjp7Imh0dHBzOi8vc2NoZW1hcy5vcGVuaWQubmV0L3NlY2V2ZW50L3Jpc2MvZXZlbnQtdHlwZS9hY2NvdW50LWRpc2FibGVkIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMCwiaW5pdGlhdGluZ19lbnRpdHkiOiJhZG1pbiJ9fX0.omYTObHdL8Y1QjzHCOqAgfMrYfuzkBOScTeWHWHbPbpqhv-aKEXW8QcIon9D7RQhoQR1wq1X7Oq4CMzywIkpca35LwbHEJTMS6lFgjuHbI5pkNKToGbAX42ArzDBuw7mE2yE-oTJwxn6f76Y9OhxixuSlHgJKm90wdoRocYCufz8QdxUYPCKdDTrx6mRvfOOMCtxN3RfjK-bcJZxlXa7mfAwt1vsiCOfLK8wOuYInhT9nYphS2WcsO1wspu6DlTAdfVclB_TEiCIMRJagIN763k2pn3Y-NIMjGaO7kQUnXu4BIn1KWJAV5tjdKkkQjBkwlT7Syn_XQinTDdC4dIy5A",
+      "expect": {
+        "jti": "1da38963-63a1-42b2-add8-41a5d4d47255",
+        "issuer": "https://sso.touchque.example",
+        "audience": [
+          "https://receiver.example.com",
+          "https://other.example"
+        ],
+        "issuedAt": 1793500000,
+        "txn": null,
+        "subject": {
+          "format": "email",
+          "email": "ada@acme.example"
+        },
+        "type": "https://schemas.openid.net/secevent/risc/event-type/account-disabled",
+        "name": "account-disabled",
+        "claims": {
+          "event_timestamp": 1793500000,
+          "initiating_entity": "admin"
+        }
+      }
+    },
+    {
+      "name": "credential-compromise",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiZDA4YzE2ZjctMzg0Ny00MzZhLWFiZTctMjYwNDAzOTdjNDliIiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9yaXNjL2V2ZW50LXR5cGUvY3JlZGVudGlhbC1jb21wcm9taXNlIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMCwiaW5pdGlhdGluZ19lbnRpdHkiOiJwb2xpY3kiLCJjcmVkZW50aWFsX3R5cGUiOiJwYXNzd29yZCJ9fX0.kdu9nXzNcO-gy34cixIUrK2YdTqfNoC9JvwyXimsB5MQTQNYgvK7fXuyZ-heQTtzJAZFDq5iH8i8q83Xwvn5RJF-cw4UNljQVR-eSQxCLxnM94iWxKBrr5Ed-MRoLiJplTu2lXpX9PHLWWE5YHHO9Je8S4CnV_ssL02h4OOp8Bx9QmkmwRTfHuvX6GtwXAIssKcpjOcdIwbWKC_uzFGfr9b9m83ZJMftl1fkwasaL6_C1uh8xI0-Z15Tay9Y_Dyq7WpsmMuwjWFC8l13hs91iZRyeeCuPek8ouYOWIw7U78J13fNs1aAEOo1FS1O26UP-4OvPvz8VyZtuD1Ui7dt0w",
+      "expect": {
+        "jti": "d08c16f7-3847-436a-abe7-26040397c49b",
+        "issuer": "https://sso.touchque.example",
+        "audience": [
+          "https://receiver.example.com"
+        ],
+        "issuedAt": 1793500000,
+        "txn": null,
+        "subject": {
+          "format": "email",
+          "email": "ada@acme.example"
+        },
+        "type": "https://schemas.openid.net/secevent/risc/event-type/credential-compromise",
+        "name": "credential-compromise",
+        "claims": {
+          "event_timestamp": 1793500000,
+          "initiating_entity": "policy",
+          "credential_type": "password"
+        }
+      }
+    },
+    {
+      "name": "verification",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiNmM0MGNlNDAtZWRjYi00Y2E2LTlhOTMtMDRkMDRmMzExMzk4IiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6Im9wYXF1ZSIsImlkIjoic3RyZWFtLTEifSwiZXZlbnRzIjp7Imh0dHBzOi8vc2NoZW1hcy5vcGVuaWQubmV0L3NlY2V2ZW50L3NzZi9ldmVudC10eXBlL3ZlcmlmaWNhdGlvbiI6eyJzdGF0ZSI6ImFiYzEyMyJ9fX0.hU04EvuTLbfmOPb9J5FVFDl2pWrBLlm2-wqUU8ZtB3YixRQFSzVaQE7F4nWWNcL_Ii0NbIt55cD0fINeKdPyT8x82FoBm1OhRyR78_v7pkg_nKIEDjMc0Ra_ZkyIgljQsAKPEVvaCAFKq-r-r-3CwU_dGHs3s2nQ0W3D97RqPEYQkcr9vEvzWPD2jVyP2HdflKLTuzQiqlMC4L-gc6iyAQBnwpi0_rocFXUhzBdjBdvgI7SKULDw2JusyHZrIdtkBC5WXDsH1ognRZG-qDl4IQ2cAcg0DV-QxYOprRqXqWUdvH9qhll0TDizuTHLQQOiLJ2Rcx72dzetfy2cGOcpvw",
+      "expect": {
+        "jti": "6c40ce40-edcb-4ca6-9a93-04d04f311398",
+        "issuer": "https://sso.touchque.example",
+        "audience": [
+          "https://receiver.example.com"
+        ],
+        "issuedAt": 1793500000,
+        "txn": null,
+        "subject": {
+          "format": "opaque",
+          "id": "stream-1"
+        },
+        "type": "https://schemas.openid.net/secevent/ssf/event-type/verification",
+        "name": "verification",
+        "claims": {
+          "state": "abc123"
+        }
+      }
+    },
+    {
+      "name": "custom",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiYWJjMGE2ODgtNTcxZS00MDRjLThhZDUtMmY5NTQwOTQ4YTVkIiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL2V4YW1wbGUuY29tL2V2ZW50LXR5cGUvY3VzdG9tIjp7Im5vdGUiOiJ1bmtub3duIHR5cGVzIGFyZSBwYXNzZWQgb24ifX19.d6vXVvE19U6rI38N2edamkc0ugnmcRMpZGjfRR6fTeje8NHepxGEXetnJYCeyZHHoGoQzKMq10sBPpBIUd0pxHR6X61nfdYFcqGtIHbdP5UJ-p3IV2dAOKzFyJHw7kYa4FERPP7I1mbvz04tJTkFM7osjWB81MXPiEIIl6nuJiIA--uGYRU-PcV9WSCot0hSQsAKPUApCtmfP6hx-YLPcXomYVEBuujqSJdWIlWslu0n6KYq2YsV3UDfKgWc3KgGhSwYM0QdnyBGT-TiK1_QzzEC-8xNA2dEmOF31Xg-0W-19WtkajPbn5v2nYo7ZIJvDS57Y9_fuOElyORk5lje7g",
+      "expect": {
+        "jti": "abc0a688-571e-404c-8ad5-2f9540948a5d",
+        "issuer": "https://sso.touchque.example",
+        "audience": [
+          "https://receiver.example.com"
+        ],
+        "issuedAt": 1793500000,
+        "txn": null,
+        "subject": {
+          "format": "email",
+          "email": "ada@acme.example"
+        },
+        "type": "https://example.com/event-type/custom",
+        "name": null,
+        "claims": {
+          "note": "unknown types are passed on"
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "another audience",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMmExZGZhOTAtNGI3YS00ZjcxLTgyYWUtNjRhNjhiMzg3NTBkIiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3NvbWVvbmUtZWxzZS5leGFtcGxlIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvc2Vzc2lvbi1yZXZva2VkIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMH19fQ.pjGxNQH-0LsO0Ng_11SHI3XVQf4p2tXkoU-IjnDMfrpKg_jdwMVPC5A_ViH9BZnts5loXIcq8sVryLubVZWnEUZ8frghO1QpY3D6M-mX0qPF2jAJs3YJKkQf9BhnDv-sIqrmdLmuDRdVJhrdHaC7UWfqpTtB2MqYx5hJwo1f55XpNZqD49bdZwvV-iL6FuVKERNx3XXoFAwUjD3GwwtjOxNZwh8eWWeWZE534A0E6mEf0euXCwli-Fol-5t8zundb7AIedOpXZkhg8kuBbPAJOXEBADQXpHuraG-L_e77p-RxTeyQvvbvk-MoPcsw82ykGyL8eVKHQXeOfX0QeTmcQ",
+      "error": "invalid_audience"
+    },
+    {
+      "name": "another issuer",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL2V2aWwuZXhhbXBsZSIsImp0aSI6IjJhMWRmYTkwLTRiN2EtNGY3MS04MmFlLTY0YTY4YjM4NzUwZCIsImlhdCI6MTc5MzUwMDAwMCwiYXVkIjoiaHR0cHM6Ly9yZWNlaXZlci5leGFtcGxlLmNvbSIsInN1Yl9pZCI6eyJmb3JtYXQiOiJlbWFpbCIsImVtYWlsIjoiYWRhQGFjbWUuZXhhbXBsZSJ9LCJldmVudHMiOnsiaHR0cHM6Ly9zY2hlbWFzLm9wZW5pZC5uZXQvc2VjZXZlbnQvY2FlcC9ldmVudC10eXBlL3Nlc3Npb24tcmV2b2tlZCI6eyJldmVudF90aW1lc3RhbXAiOjE3OTM1MDAwMDB9fX0.ZyHoTH3A-yV23JrfnY4o7MzIph3d3OJu0ZBgR9xboLnWzsKGnqTOsTRrojRe6zsTm6nipgES-NISqJOqeFSnZ2jf2z5VENvO0TMRwU_DgNELO4dGKKMnaRZvXpvnYnDzgFa03rAU5CCPFuX3OmBavHIDYxKHUnmvkTA_Wj2q3Nxo2BkLd6g2wcbkGXFIlXOHGfGFZ4w_L6yaAvvmuiOTC_ZrqrgsR7Qti0843E_1Y-j4Zq6KTH3e0yfE_ATHt2M7_c_JIYwJRA-UVH3DeBe6DOP9pckPrKUyyDt-datKARGqqoFbzqtAB4j6NqWSWLMHM_LTzk6czEnpfIXsacgjLA",
+      "error": "invalid_issuer"
+    },
+    {
+      "name": "an unknown key",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6Im5vcGUifQ.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMmExZGZhOTAtNGI3YS00ZjcxLTgyYWUtNjRhNjhiMzg3NTBkIiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvc2Vzc2lvbi1yZXZva2VkIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMH19fQ.FgsDyYtvjodibph9aanJnbLPb8sjridjTpCE6-MwKImzgrR4gWxAsu25l6mk8nhenvl3L-2wpEOjjULglo_7OF9CKHtDd6BeXhVotMpCVTyurSYw-hEGIvlFX6lu8Q8xaTL4aQzb380awewL1kCT-D0gq-w0HVWTUH367bAu2IhaDOPicfT1Ik8BUM-KaYVIUGThZ26FY10aX2rtN9rC2J_JQOd1adCfigaL3kiauQgI29C9iS8rlbRSu8UK_qc54482XwDcmAoPZQG2MTO32AjDrR6VMlA0K3zmZOYxVFuennZRb63ePd9oyYEKOMC8OOFZ5vrYNW9OlEDcSOd6Ww",
+      "error": "invalid_key"
+    },
+    {
+      "name": "signed by another key",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMmExZGZhOTAtNGI3YS00ZjcxLTgyYWUtNjRhNjhiMzg3NTBkIiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvc2Vzc2lvbi1yZXZva2VkIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMH19fQ.UqPckMDfE3HhNf-okVsZB8n4imqwVxdwOaIVBS5Zf0cCP9xgodxTUYeMlmZ9n8194UkSlbnVGr9AtcfxXCQC_midaBSrTkb9jMhFEfk844IOSH10K_gngk5CYaZGX1KqLUiMTykboLT6-PwR1npa_hUeW9dJFDflX1djYOlUt5_dCWeA_LGJXnFps77i6eGz65gsWhkIQXRuO9Y3H9t4-jEDL4yOqNHAWb0CBpc_8CUTK04HvmIvzfu_Yc_dXX4SQiOrGD7Uje05M_kx3xfsGAoxANtanB0HjtIZnVJOeWOXTKils3eyVWvfhWtoaIkcc__7Mpv-Kf5PpGuKxp7KBQ",
+      "error": "invalid_key"
+    },
+    {
+      "name": "a changed payload",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMmExZGZhOTAtNGI3YS00ZjcxLTgyYWUtNjRhNjhiMzg3NTBkIiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJldmVAZXZpbC5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvc2Vzc2lvbi1yZXZva2VkIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMH19fQ.nzYLsGOaDYsvBVMdckNq-lLeqrmb3zA1CjNbrVFQW01CC_p3TdKBLyjNSqaw3m36magfZpSgWGZhrmRbef0YHsL6JFjOFT55acS180Q6TAH4AMpqLEIrFTbml8f3XmpwoSIQuV3bZQuZmjaLa-NdvixD2uoAe7VofWm1X2xQJG3pz74IfshFUdxjuJi3RkdFgjRj9xGCuppgGDEBIjMsyLMUyYmPF_7Wg4Y9sXdAPaUEH2vBTHvoP4s9iW-aYY0gMBhdkswChfV7nCJHSrt2fkf8Omd1t1wG7FkULMOnoh2AOa3UK75QBxvX3vfE3by5A-Dtv0qT84eUBr8Md8nKZA",
+      "error": "invalid_key"
+    },
+    {
+      "name": "not a SET (typ JWT)",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMmExZGZhOTAtNGI3YS00ZjcxLTgyYWUtNjRhNjhiMzg3NTBkIiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvc2Vzc2lvbi1yZXZva2VkIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMH19fQ.i1Qx0aRqua4ZAYcD0O7gwcHB9or4X_cLg1ZzF0bjBSO1PdRdFv_YYd2vkxxWjXzHgGBcAAEWXxpjS6W3aGCqYgAbpqXJyvmyQAnqkBAzXXUXyYmfr2afQrXDj-9Lm45gxd9kidwKxNM1HzwkAZoW9sPO5ADZ6lM3BSP4IlSwk1sDxCqL3kxqcLKPxmMNGvSYvAh8U-d5O11DgsD9WK-QBZgxVqQzaNbHNMSWcEP15rlniA4kwe0mysXpYYMzx-2E_05yL9B32-gfcsD5WvvS17OxIae7QqXYiaV8wRRpXUiWLEUEMnJ7krh71wqeh2PJaHR7EjX8gcusvpmlD2qxGA",
+      "error": "invalid_request"
+    },
+    {
+      "name": "two events in one SET",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMmExZGZhOTAtNGI3YS00ZjcxLTgyYWUtNjRhNjhiMzg3NTBkIiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvc2Vzc2lvbi1yZXZva2VkIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMH0sImh0dHBzOi8vc2NoZW1hcy5vcGVuaWQubmV0L3NlY2V2ZW50L3Jpc2MvZXZlbnQtdHlwZS9hY2NvdW50LWRpc2FibGVkIjp7fX19.mapIoCSylhBv_vdGIoYuUyzAaNyHO-G7QzxXUi2p3qTzPFnBDfFDaywMKjx96MPsqiJ0hwx7CN3n8r5ktEyD6Oi3Mz3_v0fWisYmoPjmH4N2EYuQbsXe8b75klSTb4h3CQEARTuKCskcSCZ9vDPgoFCMihHZA758fOnTkDkwW3FRuOshoJyhsNDFof--xS_rOUO9wH4ZsIgmcvJFU8zEp0WWbXeXJgZHvZgTanWtIfKhOMReGpbXrextxr_jq_fwkiTjJoFhvWqD7Qo6HcLYmDa8iEm05PaMdnv3AoloyM51EqCUDHdMyQJOdaUKhR4z_zDGAe-HOy-Of0uHp7UV-g",
+      "error": "invalid_request"
+    },
+    {
+      "name": "alg HS256",
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMmExZGZhOTAtNGI3YS00ZjcxLTgyYWUtNjRhNjhiMzg3NTBkIiwiaWF0IjoxNzkzNTAwMDAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvc2Vzc2lvbi1yZXZva2VkIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMH19fQ.AHQAhhIICnBMxlQ3PWq-gm-qu6aUKGJIw0vzcsYztsCTxjuqFCCssA_FM_hO8E8amw7q5NIHx2nNlTORqVrAt3Mp045ktV6586yvRMvRadQRkZERdGrUGhSeeQvx0rCi6941DjV0mDiDuh8m1Ijh3E9XyaNeWyJ4f0i1F4thEKZS-ml7-o1sEFbbDS8vCWUUp1Ww4tilBwUF7C2D2b4cli1U5jVQNC2kPXce9vKp0Ku9nyVT1VjmjdUxAxRY4Yi4ZVM59mRBEUlXET92_Q2Px4pO1taVqIPKGT5r0wVk3ccm-mk0wTdJpoa545-C5z5l1TS66v4gPdhc4MZAMzqfyQ",
+      "error": "invalid_key"
+    },
+    {
+      "name": "issued in the future",
+      "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6InNlY2V2ZW50K2p3dCIsImtpZCI6InRxLXNzZi0xIn0.eyJpc3MiOiJodHRwczovL3Nzby50b3VjaHF1ZS5leGFtcGxlIiwianRpIjoiMmExZGZhOTAtNGI3YS00ZjcxLTgyYWUtNjRhNjhiMzg3NTBkIiwiaWF0Ijo0MTAyNDQ0ODAwLCJhdWQiOiJodHRwczovL3JlY2VpdmVyLmV4YW1wbGUuY29tIiwic3ViX2lkIjp7ImZvcm1hdCI6ImVtYWlsIiwiZW1haWwiOiJhZGFAYWNtZS5leGFtcGxlIn0sImV2ZW50cyI6eyJodHRwczovL3NjaGVtYXMub3BlbmlkLm5ldC9zZWNldmVudC9jYWVwL2V2ZW50LXR5cGUvc2Vzc2lvbi1yZXZva2VkIjp7ImV2ZW50X3RpbWVzdGFtcCI6MTc5MzUwMDAwMH19fQ.M-eHNOubX7b5hfuRbzMqwu1VVWS0IOvEWsPvgMIdQn1z6dLP34pq86bZSLWjYlL0dyvv4UrehK75XRHUvtbpgarpu5IW-z6JwECb3DdPb85GLPH3p8BwksOcNJmTFPxnKKRQKndI8ACuLjzEHUaaBpS7yfCHJlEsDAC_PPSy9hMb3A569kCgFcILD8v8E0FcZ0mPkNqW_dgZMs69Hz7AKU3vxqPSXFbvfxqq-gtGmYubhkev6ARlVL3N20fCXfvzJs-E4QmzOIABXPkFdHauyUdzkn_pdHprUym0Og2HOytmZGax8fMg2wjNSJQ7OpvEm6y3NuBlxQnffk5YgevTag",
+      "error": "invalid_request"
+    },
+    {
+      "name": "not a JWT",
+      "token": "abc.def",
+      "error": "invalid_request"
+    }
+  ]
+}

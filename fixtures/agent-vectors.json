@@ -1,0 +1,416 @@
+{
+  "description": "Cross-SDK vectors for AI agents. thumbprints: RFC 7638 JWK thumbprints (the default kid; RFC 9449 §6 and RFC 8037 A.3 examples). ath: base64url SHA-256 of an access token, as a DPoP proof carries it (RFC 9449 §7.1 example). calls: what each management call sends; \"{id}\" is the agent created by the first call, \"{kid}\" the kid of its second key. approvalToken: an approval token signed by the jwks key (verify at now = verifyAt), with a tampered copy and one of the wrong type. matching: which `expect` values match a token's authorization_details (amounts compare as decimals, IBANs without spaces and case-insensitively, currencies case-insensitively; every expected field must be equal, extra fields are ignored; an array matches entry by entry).",
+  "thumbprints": [
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "l8tFrhx-34tV3hRICRDY9zCkDlpBhF42UQUfWVAWBFs",
+        "y": "9VE4jf_Ok_o64zbTTlcuNJajHmt6v9TDVrU0CdvGRDA"
+      },
+      "thumbprint": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I"
+    },
+    {
+      "jwk": {
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+      },
+      "thumbprint": "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k"
+    }
+  ],
+  "ath": [
+    {
+      "accessToken": "Kz~8mXK1EalYznwH-LC-1fBAo.4Ljp~zsPE_NeO.gxU",
+      "ath": "fUHyO2r2Z3DZ53EsNrWBb0xWXoaNy59IiKCAqksmQEo"
+    }
+  ],
+  "tokenRequest": {
+    "method": "POST",
+    "path": "/agents/token",
+    "contentType": "application/x-www-form-urlencoded",
+    "form": {
+      "grant_type": "client_credentials",
+      "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+    },
+    "assertion": {
+      "header": [
+        "alg",
+        "kid"
+      ],
+      "claims": {
+        "iss": "{id}",
+        "sub": "{id}",
+        "aud": "{baseUrl}/agents/token",
+        "maxLifetimeSeconds": 300
+      }
+    },
+    "dpop": {
+      "header": {
+        "typ": "dpop+jwt"
+      },
+      "claims": [
+        "htm",
+        "htu",
+        "iat",
+        "jti"
+      ],
+      "onCalls": [
+        "ath"
+      ]
+    }
+  },
+  "calls": [
+    {
+      "name": "create",
+      "args": {
+        "name": "Invoice bot",
+        "allowedTypes": [
+          "SEND_MONEY"
+        ],
+        "ownerEmail": "owner@example.com",
+        "platform": "openai-agents",
+        "reviewInDays": 30
+      },
+      "method": "POST",
+      "path": "/agents",
+      "body": {
+        "name": "Invoice bot",
+        "allowedTypes": [
+          "SEND_MONEY"
+        ],
+        "ownerEmail": "owner@example.com",
+        "platform": "openai-agents",
+        "reviewInDays": 30,
+        "publicKey": "{publicKey}"
+      }
+    },
+    {
+      "name": "list",
+      "args": {
+        "status": "active"
+      },
+      "method": "GET",
+      "path": "/agents",
+      "query": "status=active"
+    },
+    {
+      "name": "get",
+      "args": {},
+      "method": "GET",
+      "path": "/agents/{id}"
+    },
+    {
+      "name": "update",
+      "args": {
+        "reviewInDays": 60,
+        "description": "Pays approved invoices"
+      },
+      "method": "PATCH",
+      "path": "/agents/{id}",
+      "body": {
+        "reviewInDays": 60,
+        "description": "Pays approved invoices"
+      }
+    },
+    {
+      "name": "addKey",
+      "args": {},
+      "method": "POST",
+      "path": "/agents/{id}/keys",
+      "body": {
+        "publicKey": "{publicKey2}"
+      }
+    },
+    {
+      "name": "removeKey",
+      "args": {},
+      "method": "DELETE",
+      "path": "/agents/{id}/keys/{kid}"
+    },
+    {
+      "name": "suspend",
+      "args": {
+        "reason": "looping"
+      },
+      "method": "POST",
+      "path": "/agents/{id}/suspend",
+      "body": {
+        "reason": "looping"
+      }
+    },
+    {
+      "name": "resume",
+      "args": {},
+      "method": "POST",
+      "path": "/agents/{id}/resume",
+      "body": {}
+    },
+    {
+      "name": "setPolicy",
+      "args": {
+        "policy": {
+          "requestsPerUserPer10Min": 3,
+          "amountPerRequest": {
+            "TRY": "1000.00"
+          },
+          "background": "never",
+          "newRecipients": "deny"
+        }
+      },
+      "method": "PUT",
+      "path": "/agents/{id}/policy",
+      "body": {
+        "policy": {
+          "requestsPerUserPer10Min": 3,
+          "amountPerRequest": {
+            "TRY": "1000.00"
+          },
+          "background": "never",
+          "newRecipients": "deny"
+        }
+      }
+    },
+    {
+      "name": "getWorkspacePolicy",
+      "args": {},
+      "method": "GET",
+      "path": "/agents/workspace-policy"
+    },
+    {
+      "name": "setWorkspacePolicy",
+      "args": {
+        "policy": {
+          "amountPerRequest": {
+            "TRY": "5000.00"
+          },
+          "requirePasskeyAbove": {
+            "TRY": "1000.00"
+          }
+        }
+      },
+      "method": "PUT",
+      "path": "/agents/workspace-policy",
+      "body": {
+        "policy": {
+          "amountPerRequest": {
+            "TRY": "5000.00"
+          },
+          "requirePasskeyAbove": {
+            "TRY": "1000.00"
+          }
+        }
+      }
+    },
+    {
+      "name": "listEvents",
+      "args": {
+        "after": "cursor-1",
+        "limit": 50
+      },
+      "method": "GET",
+      "path": "/agents/events",
+      "query": "after=cursor-1&limit=50"
+    },
+    {
+      "name": "listBlocks",
+      "args": {},
+      "method": "GET",
+      "path": "/agents/{id}/blocks"
+    },
+    {
+      "name": "killSwitch",
+      "args": {
+        "engaged": true,
+        "reason": "incident"
+      },
+      "method": "PUT",
+      "path": "/agents/kill-switch",
+      "body": {
+        "engaged": true,
+        "reason": "incident"
+      }
+    },
+    {
+      "name": "killSwitchOff",
+      "args": {
+        "engaged": false
+      },
+      "method": "PUT",
+      "path": "/agents/kill-switch",
+      "body": {
+        "engaged": false
+      }
+    },
+    {
+      "name": "revoke",
+      "args": {},
+      "method": "DELETE",
+      "path": "/agents/{id}"
+    }
+  ],
+  "approvalToken": {
+    "jwks": {
+      "keys": [
+        {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "T9Jx1QJkSDDW-OG8hxQBnPoXJeGKAazyd92U7uFStVM",
+          "y": "He0fvP9NZRjdGtOEwzD0hNYSQB7Yl9H8K7x4pj-2TiI",
+          "kid": "t5zqM8c2FjiUZugzcYqiDhTicFOFq0iXrf-BkmVNR8Y",
+          "alg": "ES256",
+          "use": "sig"
+        }
+      ]
+    },
+    "token": "eyJhbGciOiJFUzI1NiIsInR5cCI6InRvdWNocXVlLWFwcHJvdmFsK2p3dCIsImtpZCI6InQ1enFNOGMyRmppVVp1Z3pjWXFpRGhUaWNGT0ZxMGlYcmYtQmttVk5SOFkifQ.eyJpc3MiOiJodHRwczovL2FwaS50b3VjaHF1ZS5jb20iLCJhdWQiOiJ0b3VjaHF1ZTp3b3Jrc3BhY2U6d3MtMSIsInN1YiI6ImF5c2VAZXhhbXBsZS5jb20iLCJhY3QiOnsic3ViIjoiYWd0X2FiY2RlZmdoaWprbW5wcXJzdHV2IiwibmFtZSI6Ikludm9pY2UgYm90In0sImF1dGhvcml6YXRpb25fZGV0YWlscyI6W3sidHlwZSI6InBheW1lbnRfaW5pdGlhdGlvbiIsImluc3RydWN0ZWRBbW91bnQiOnsiY3VycmVuY3kiOiJUUlkiLCJhbW91bnQiOiI1MDAuMDAifSwiY3JlZGl0b3JOYW1lIjoiQXnFn2UgWcSxbG1heiIsImNyZWRpdG9yQWNjb3VudCI6eyJpYmFuIjoiVFIzMzAwMDYxMDA1MTk3ODY0NTc4NDEzMjYifX1dLCJ0eG4iOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJ0eXBlIjoiUEFZX0lOVk9JQ0UiLCJqdGkiOiJqdGktdmVjdG9yLTEiLCJpYXQiOjE3OTMwMDAwMDAsImV4cCI6MTc5MzAwMDMwMCwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5LURXcHFxMzBqWnlKR0hUTjBkMkhnbEJWM3VpZ3VBNEkifSwiYW1yIjpbImh3ayIsIm1mYSIsInVzZXIiXSwibnVtYmVyX21hdGNoZWQiOnRydWUsInByZXNlbmNlIjoiaW50ZXJhY3RpdmUiLCJkZXRhaWxzIjpbeyJsYWJlbCI6IkFJIGFnZW50IiwidmFsdWUiOiJJbnZvaWNlIGJvdCJ9XX0.KEpLlF4cIFPJKfrPJ3KxL_pQpGJQRmzRJ_w09b79ZAKheTEMTh3FZJvKqhM5U8wWtbklYrEIaT6hx04lavC_Aw",
+    "verifyAt": 1793000100,
+    "claims": {
+      "iss": "https://api.touchque.com",
+      "aud": "touchque:workspace:ws-1",
+      "sub": "ayse@example.com",
+      "act": {
+        "sub": "agt_abcdefghijkmnpqrstuv",
+        "name": "Invoice bot"
+      },
+      "authorization_details": [
+        {
+          "type": "payment_initiation",
+          "instructedAmount": {
+            "currency": "TRY",
+            "amount": "500.00"
+          },
+          "creditorName": "Ayşe Yılmaz",
+          "creditorAccount": {
+            "iban": "TR330006100519786457841326"
+          }
+        }
+      ],
+      "txn": "00000000-0000-4000-8000-000000000001",
+      "type": "PAY_INVOICE",
+      "jti": "jti-vector-1",
+      "iat": 1793000000,
+      "exp": 1793000300,
+      "cnf": {
+        "jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I"
+      },
+      "amr": [
+        "hwk",
+        "mfa",
+        "user"
+      ],
+      "number_matched": true,
+      "presence": "interactive",
+      "details": [
+        {
+          "label": "AI agent",
+          "value": "Invoice bot"
+        }
+      ]
+    },
+    "tampered": "eyJhbGciOiJFUzI1NiIsInR5cCI6InRvdWNocXVlLWFwcHJvdmFsK2p3dCIsImtpZCI6InQ1enFNOGMyRmppVVp1Z3pjWXFpRGhUaWNGT0ZxMGlYcmYtQmttVk5SOFkifQ.eyJpc3MiOiJodHRwczovL2FwaS50b3VjaHF1ZS5jb20iLCJhdWQiOiJ0b3VjaHF1ZTp3b3Jrc3BhY2U6d3MtMSIsInN1YiI6Im1hbGxvcnlAZXhhbXBsZS5jb20iLCJhY3QiOnsic3ViIjoiYWd0X2FiY2RlZmdoaWprbW5wcXJzdHV2IiwibmFtZSI6Ikludm9pY2UgYm90In0sImF1dGhvcml6YXRpb25fZGV0YWlscyI6W3sidHlwZSI6InBheW1lbnRfaW5pdGlhdGlvbiIsImluc3RydWN0ZWRBbW91bnQiOnsiY3VycmVuY3kiOiJUUlkiLCJhbW91bnQiOiI1MDAuMDAifSwiY3JlZGl0b3JOYW1lIjoiQXnFn2UgWcSxbG1heiIsImNyZWRpdG9yQWNjb3VudCI6eyJpYmFuIjoiVFIzMzAwMDYxMDA1MTk3ODY0NTc4NDEzMjYifX1dLCJ0eG4iOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJ0eXBlIjoiUEFZX0lOVk9JQ0UiLCJqdGkiOiJqdGktdmVjdG9yLTEiLCJpYXQiOjE3OTMwMDAwMDAsImV4cCI6MTc5MzAwMDMwMCwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5LURXcHFxMzBqWnlKR0hUTjBkMkhnbEJWM3VpZ3VBNEkifSwiYW1yIjpbImh3ayIsIm1mYSIsInVzZXIiXSwibnVtYmVyX21hdGNoZWQiOnRydWUsInByZXNlbmNlIjoiaW50ZXJhY3RpdmUiLCJkZXRhaWxzIjpbeyJsYWJlbCI6IkFJIGFnZW50IiwidmFsdWUiOiJJbnZvaWNlIGJvdCJ9XX0.KEpLlF4cIFPJKfrPJ3KxL_pQpGJQRmzRJ_w09b79ZAKheTEMTh3FZJvKqhM5U8wWtbklYrEIaT6hx04lavC_Aw",
+    "wrongType": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InQ1enFNOGMyRmppVVp1Z3pjWXFpRGhUaWNGT0ZxMGlYcmYtQmttVk5SOFkifQ.eyJpc3MiOiJodHRwczovL2FwaS50b3VjaHF1ZS5jb20iLCJhdWQiOiJ0b3VjaHF1ZTp3b3Jrc3BhY2U6d3MtMSIsInN1YiI6ImF5c2VAZXhhbXBsZS5jb20iLCJhY3QiOnsic3ViIjoiYWd0X2FiY2RlZmdoaWprbW5wcXJzdHV2IiwibmFtZSI6Ikludm9pY2UgYm90In0sImF1dGhvcml6YXRpb25fZGV0YWlscyI6W3sidHlwZSI6InBheW1lbnRfaW5pdGlhdGlvbiIsImluc3RydWN0ZWRBbW91bnQiOnsiY3VycmVuY3kiOiJUUlkiLCJhbW91bnQiOiI1MDAuMDAifSwiY3JlZGl0b3JOYW1lIjoiQXnFn2UgWcSxbG1heiIsImNyZWRpdG9yQWNjb3VudCI6eyJpYmFuIjoiVFIzMzAwMDYxMDA1MTk3ODY0NTc4NDEzMjYifX1dLCJ0eG4iOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJ0eXBlIjoiUEFZX0lOVk9JQ0UiLCJqdGkiOiJqdGktdmVjdG9yLTEiLCJpYXQiOjE3OTMwMDAwMDAsImV4cCI6MTc5MzAwMDMwMCwiY25mIjp7ImprdCI6IjBaY09DT1JaTll5LURXcHFxMzBqWnlKR0hUTjBkMkhnbEJWM3VpZ3VBNEkifSwiYW1yIjpbImh3ayIsIm1mYSIsInVzZXIiXSwibnVtYmVyX21hdGNoZWQiOnRydWUsInByZXNlbmNlIjoiaW50ZXJhY3RpdmUiLCJkZXRhaWxzIjpbeyJsYWJlbCI6IkFJIGFnZW50IiwidmFsdWUiOiJJbnZvaWNlIGJvdCJ9XX0.3HeOQRzyCEjJukX5oLPZkfb_m1d-9haV_n4q66qv2PIQ5HH8u48bCj_RuOzW41QX3iNclGNdIqCPoBnXBZt8mw",
+    "audience": "touchque:workspace:ws-1",
+    "noAudience": {
+      "description": "Signed like a real token (same claims) but without aud: every SDK refuses it, as it does a token for another workspace. Verify it with the jwks next to it.",
+      "token": "eyJhbGciOiJFUzI1NiIsInR5cCI6InRvdWNocXVlLWFwcHJvdmFsK2p3dCIsImtpZCI6IlhBRzl5Mm1XUHlhN2p2MVZkVE1SaHh6UDlMNGJfZDlLNXJOLWRWVWx6NmMifQ.eyJpc3MiOiJodHRwczovL2FwaS50b3VjaHF1ZS5jb20iLCJzdWIiOiJheXNlQGV4YW1wbGUuY29tIiwiYWN0Ijp7InN1YiI6ImFndF9hYmNkZWZnaGlqa21ucHFyc3R1diIsIm5hbWUiOiJJbnZvaWNlIGJvdCJ9LCJhdXRob3JpemF0aW9uX2RldGFpbHMiOlt7InR5cGUiOiJwYXltZW50X2luaXRpYXRpb24iLCJpbnN0cnVjdGVkQW1vdW50Ijp7ImN1cnJlbmN5IjoiVFJZIiwiYW1vdW50IjoiNTAwLjAwIn0sImNyZWRpdG9yTmFtZSI6IkF5xZ9lIFnEsWxtYXoiLCJjcmVkaXRvckFjY291bnQiOnsiaWJhbiI6IlRSMzMwMDA2MTAwNTE5Nzg2NDU3ODQxMzI2In19XSwidHhuIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwidHlwZSI6IlBBWV9JTlZPSUNFIiwianRpIjoianRpLXZlY3Rvci0xIiwiaWF0IjoxNzkzMDAwMDAwLCJleHAiOjE3OTMwMDAzMDAsImNuZiI6eyJqa3QiOiIwWmNPQ09SWk5ZeS1EV3BxcTMwalp5SkdIVE4wZDJIZ2xCVjN1aWd1QTRJIn0sImFtciI6WyJod2siLCJtZmEiLCJ1c2VyIl0sIm51bWJlcl9tYXRjaGVkIjp0cnVlLCJwcmVzZW5jZSI6ImludGVyYWN0aXZlIiwiZGV0YWlscyI6W3sibGFiZWwiOiJBSSBhZ2VudCIsInZhbHVlIjoiSW52b2ljZSBib3QifV19.9F6ya8d4hmSGDKebUQ15NLAmVQ3xGz0wOSGWAyVa6S7uqQaxnWtjG_CK6NL4zHwpEX4lCoXhCsWQ6iwnM9KfoQ",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "x": "0ESDHKR9u85fPxrE-3ZdI552piQn__QRExbF_dmYZo8",
+            "y": "zeyYhqR2IEWj8wUFlac2-Zyg_9AvgRN9qNLZZOq3y7U",
+            "kid": "XAG9y2mWPya7jv1VdTMRhxzP9L4b_d9K5rN-dVUlz6c",
+            "alg": "ES256",
+            "use": "sig"
+          }
+        ]
+      }
+    }
+  },
+  "matching": [
+    {
+      "name": "same fields",
+      "expect": {
+        "type": "payment_initiation",
+        "instructedAmount": {
+          "currency": "TRY",
+          "amount": "500.00"
+        },
+        "creditorAccount": {
+          "iban": "TR330006100519786457841326"
+        }
+      },
+      "matches": true
+    },
+    {
+      "name": "amount as another decimal spelling, IBAN with spaces and lower case",
+      "expect": {
+        "instructedAmount": {
+          "currency": "try",
+          "amount": "500"
+        },
+        "creditorAccount": {
+          "iban": "tr33 0006 1005 1978 6457 8413 26"
+        }
+      },
+      "matches": true
+    },
+    {
+      "name": "a different amount",
+      "expect": {
+        "instructedAmount": {
+          "currency": "TRY",
+          "amount": "500.01"
+        }
+      },
+      "matches": false
+    },
+    {
+      "name": "a different IBAN",
+      "expect": {
+        "creditorAccount": {
+          "iban": "TR320010009999901234567890"
+        }
+      },
+      "matches": false
+    },
+    {
+      "name": "a different recipient",
+      "expect": {
+        "creditorName": "Mallory"
+      },
+      "matches": false
+    },
+    {
+      "name": "a field the token does not have",
+      "expect": {
+        "remittanceInformationUnstructured": "x"
+      },
+      "matches": false
+    },
+    {
+      "name": "array form, entry by entry",
+      "expect": [
+        {
+          "type": "payment_initiation",
+          "creditorName": "Ayşe Yılmaz"
+        }
+      ],
+      "matches": true
+    },
+    {
+      "name": "array with more entries than the token",
+      "expect": [
+        {
+          "type": "payment_initiation"
+        },
+        {
+          "type": "purchase"
+        }
+      ],
+      "matches": false
+    }
+  ]
+}

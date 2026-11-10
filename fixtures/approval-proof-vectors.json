@@ -1,0 +1,511 @@
+{
+  "description": "Cross-SDK golden vectors for verifyApprovalProof / detailsDigest. Message: \"touchque-approve:v2\\n{requestId}\\n{type}\\n{challengeCode}\\n{detailsDigest}\"; ECDSA P-256 SHA-256, DER signature, X9.63 uncompressed base64 public key. Details are given as ordered {label,value} lists; digest_cases also cover the object form where a language keeps key order.",
+  "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0=",
+  "digest_cases": [
+    {
+      "details": [
+        {
+          "label": "Amount",
+          "value": "1,250.00 USD"
+        },
+        {
+          "label": "Recipient",
+          "value": "Jane Doe"
+        }
+      ],
+      "digest": "4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d"
+    },
+    {
+      "details_object": {
+        "Amount": "1,250.00 USD",
+        "Recipient": "Jane Doe"
+      },
+      "digest": "4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d"
+    },
+    {
+      "details": [
+        {
+          "label": "  Empfänger ",
+          "value": " Zoë Ångström  "
+        },
+        {
+          "label": "Montant",
+          "value": "€12.500,00"
+        }
+      ],
+      "digest": "0dac69b641707a90519a92b1433827e299c09a42ac7b0fc96f53b65d97f679b5"
+    },
+    {
+      "details": [],
+      "digest": ""
+    }
+  ],
+  "cases": [
+    {
+      "name": "valid, pinned key",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": true
+    },
+    {
+      "name": "valid, trust on first use",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "allowUnpinnedKey": true
+      },
+      "expected": true
+    },
+    {
+      "name": "no pin and no allowUnpinnedKey fails closed",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ]
+      },
+      "expected": false
+    },
+    {
+      "name": "pinned to a different device",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BAb0VlIzeqoWQnwKZ5hvjOcdjYv6YdKQ+ulo1c7Kv3bWLFIK6ObvhemuqMz9OaQcytvD4Rjl4Gm+TYGutD0DP5E="
+      },
+      "expected": false
+    },
+    {
+      "name": "other details than shown",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "9,999.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    },
+    {
+      "name": "other request id",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-2",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    },
+    {
+      "name": "other action type",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "LOGIN",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    },
+    {
+      "name": "other challenge code",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "48",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    },
+    {
+      "name": "missing challenge code",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    },
+    {
+      "name": "message edited after signing",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nLOGIN\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "LOGIN",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    },
+    {
+      "name": "signature from another key, pinned key claimed",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIG0TZcXToSyFFyB0pIHpJ3JeQqqTbpBNzWqqsARc1mCZAiAqHCBGxkNYJbcgf6OOAhfPKeBS0DfM+cD/o0/QWRfSrQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    },
+    {
+      "name": "corrupted signature",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "Z2FyYmFnZS1zaWduYXR1cmU=",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    },
+    {
+      "name": "public key not an uncompressed P-256 point",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "allowUnpinnedKey": true
+      },
+      "expected": false
+    },
+    {
+      "name": "wrong version",
+      "proof": {
+        "version": "v1",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    },
+    {
+      "name": "wrong algorithm",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P384-SHA384",
+        "message": "touchque-approve:v2\nreq-1\nWITHDRAW\n47\n4d09a5ac01b443fffbfe91a648b4f1e9e2737f9908b0c305d3672c7cb8dfaa9d",
+        "signature": "MEQCIHMeegGuvMvv8m7xSmOzy66NVncZ1ebVgPGAIC8Ex+7OAiA2WFWhav3pT84bOxrjlenf2iDeVYBTb7DcWs1KTx8dBQ==",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    },
+    {
+      "name": "no details, no challenge code",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-3\nLOGIN\n\n",
+        "signature": "MEYCIQCR+Lh04n0mKSYVWcQsYyv/2umb49MtrbHY61+TmBkBngIhANnpdwen5WboGYo5q9R46g6MZFhkf30PRDMbRNpJD21q",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-3",
+        "type": "LOGIN",
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": true
+    },
+    {
+      "name": "unicode details, trimmed",
+      "proof": {
+        "version": "v2",
+        "algorithm": "ECDSA-P256-SHA256",
+        "message": "touchque-approve:v2\nreq-ß\nSEND_MONEY\n\n0dac69b641707a90519a92b1433827e299c09a42ac7b0fc96f53b65d97f679b5",
+        "signature": "MEYCIQCbavz+f/RvP7obTFMVnZQiy90g/wTAKh66zk9lKOLtdQIhAI33QDF0MMcC0jW5KqwK0XdXC/TwOkIAGNNtGJJYFfXG",
+        "publicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "options": {
+        "requestId": "req-ß",
+        "type": "SEND_MONEY",
+        "details": [
+          {
+            "label": "  Empfänger ",
+            "value": " Zoë Ångström  "
+          },
+          {
+            "label": "Montant",
+            "value": "€12.500,00"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": true
+    },
+    {
+      "name": "null proof",
+      "proof": null,
+      "options": {
+        "requestId": "req-1",
+        "type": "WITHDRAW",
+        "challengeCode": "47",
+        "details": [
+          {
+            "label": "Amount",
+            "value": "1,250.00 USD"
+          },
+          {
+            "label": "Recipient",
+            "value": "Jane Doe"
+          }
+        ],
+        "expectedPublicKey": "BNFoD05bvDuZ/NfZV0uqytc+P/xPmvRiagMQR3TmGoTkes+cjGrBTWvSAPDynTgSdg2k+TTOR6s8NejJhUoGQW0="
+      },
+      "expected": false
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "secret": "whsec_fixture_secret_0123456789abcdef",
+  "note": "expected_canonical = stableStringify(payload); expected_signature = HMAC-SHA256(secret, expected_canonical); server sends delivered_body with the signature appended.",
+  "vectors": [
+    {
+      "description": "flat scalar payload",
+      "payload": {
+        "status": "SUCCESS",
+        "action": "LOGIN_CONFIRM",
+        "requestId": "req_1",
+        "externalUsername": "a@b.com",
+        "timestamp": "2026-09-01T12:00:00.000Z",
+        "jti": "jti_1",
+        "riskScore": 0,
+        "riskFactors": []
+      },
+      "expected_canonical": "{\"action\":\"LOGIN_CONFIRM\",\"externalUsername\":\"a@b.com\",\"jti\":\"jti_1\",\"requestId\":\"req_1\",\"riskFactors\":[],\"riskScore\":0,\"status\":\"SUCCESS\",\"timestamp\":\"2026-09-01T12:00:00.000Z\"}",
+      "expected_signature": "2bdd9356f438f7f39db55ef21b041ec539aa6681b8eb3dc76d9de1d9c1aeac55",
+      "delivered_body": "{\"status\":\"SUCCESS\",\"action\":\"LOGIN_CONFIRM\",\"requestId\":\"req_1\",\"externalUsername\":\"a@b.com\",\"timestamp\":\"2026-09-01T12:00:00.000Z\",\"jti\":\"jti_1\",\"riskScore\":0,\"riskFactors\":[],\"signature\":\"2bdd9356f438f7f39db55ef21b041ec539aa6681b8eb3dc76d9de1d9c1aeac55\"}"
+    },
+    {
+      "description": "nested object in a custom field, nested keys NOT alphabetical",
+      "payload": {
+        "status": "SUCCESS",
+        "requestId": "req_2",
+        "context": {
+          "z": 1,
+          "a": 2,
+          "inner": {
+            "y": true,
+            "x": false
+          }
+        },
+        "timestamp": "2026-09-01T12:00:00.000Z"
+      },
+      "expected_canonical": "{\"context\":{\"z\":1,\"a\":2,\"inner\":{\"y\":true,\"x\":false}},\"requestId\":\"req_2\",\"status\":\"SUCCESS\",\"timestamp\":\"2026-09-01T12:00:00.000Z\"}",
+      "expected_signature": "7fb1339334fb0a916ee1b54913f1d818dc8f45662d65d5739f718d8729c5d5fb",
+      "delivered_body": "{\"status\":\"SUCCESS\",\"requestId\":\"req_2\",\"context\":{\"z\":1,\"a\":2,\"inner\":{\"y\":true,\"x\":false}},\"timestamp\":\"2026-09-01T12:00:00.000Z\",\"signature\":\"7fb1339334fb0a916ee1b54913f1d818dc8f45662d65d5739f718d8729c5d5fb\"}"
+    },
+    {
+      "description": "array field + empty object field",
+      "payload": {
+        "status": "SUCCESS",
+        "requestId": "req_3",
+        "riskFactors": [
+          "new_device",
+          "unusual_time_of_day"
+        ],
+        "meta": {}
+      },
+      "expected_canonical": "{\"meta\":{},\"requestId\":\"req_3\",\"riskFactors\":[\"new_device\",\"unusual_time_of_day\"],\"status\":\"SUCCESS\"}",
+      "expected_signature": "3f4213e1f0a0eaafdbc8dcae4091175bf9ffb87f33a29a165d5e7fefb0623f1c",
+      "delivered_body": "{\"status\":\"SUCCESS\",\"requestId\":\"req_3\",\"riskFactors\":[\"new_device\",\"unusual_time_of_day\"],\"meta\":{},\"signature\":\"3f4213e1f0a0eaafdbc8dcae4091175bf9ffb87f33a29a165d5e7fefb0623f1c\"}"
+    },
+    {
+      "description": "unicode value and a value containing a slash",
+      "payload": {
+        "status": "SUCCESS",
+        "requestId": "req_4",
+        "note": "g#ç/ü — https://example.com/x",
+        "city": "İstanbul"
+      },
+      "expected_canonical": "{\"city\":\"İstanbul\",\"note\":\"g#ç/ü — https://example.com/x\",\"requestId\":\"req_4\",\"status\":\"SUCCESS\"}",
+      "expected_signature": "c52146d2a6708a87a7c1c83dff4c75996e5e4d1518958343c55887975365a1d7",
+      "delivered_body": "{\"status\":\"SUCCESS\",\"requestId\":\"req_4\",\"note\":\"g#ç/ü — https://example.com/x\",\"city\":\"İstanbul\",\"signature\":\"c52146d2a6708a87a7c1c83dff4c75996e5e4d1518958343c55887975365a1d7\"}"
+    },
+    {
+      "description": "high-precision number that float64 re-serialisation would reformat",
+      "payload": {
+        "status": "SUCCESS",
+        "requestId": "req_5",
+        "ledgerBalance": 123456789.12345679
+      },
+      "expected_canonical": "{\"ledgerBalance\":123456789.12345679,\"requestId\":\"req_5\",\"status\":\"SUCCESS\"}",
+      "expected_signature": "2cc6d86988c3990698fe3cdb3292cdb9d1e9ebcf0d376788d0c4f1fc8875e73a",
+      "delivered_body": "{\"status\":\"SUCCESS\",\"requestId\":\"req_5\",\"ledgerBalance\":123456789.12345679,\"signature\":\"2cc6d86988c3990698fe3cdb3292cdb9d1e9ebcf0d376788d0c4f1fc8875e73a\"}"
+    },
+    {
+      "description": "rejected payload with a reason",
+      "payload": {
+        "status": "REJECTED",
+        "action": "LOGIN_REJECT",
+        "requestId": "req_6",
+        "reason": "user_declined",
+        "timestamp": "2026-09-01T12:00:00.000Z"
+      },
+      "expected_canonical": "{\"action\":\"LOGIN_REJECT\",\"reason\":\"user_declined\",\"requestId\":\"req_6\",\"status\":\"REJECTED\",\"timestamp\":\"2026-09-01T12:00:00.000Z\"}",
+      "expected_signature": "85118524d0ad4ebde83574d72b255510d14218dc5949a06ad11670b4c0884eb0",
+      "delivered_body": "{\"status\":\"REJECTED\",\"action\":\"LOGIN_REJECT\",\"requestId\":\"req_6\",\"reason\":\"user_declined\",\"timestamp\":\"2026-09-01T12:00:00.000Z\",\"signature\":\"85118524d0ad4ebde83574d72b255510d14218dc5949a06ad11670b4c0884eb0\"}"
+    }
+  ]
+}
