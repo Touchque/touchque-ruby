@@ -3,8 +3,8 @@
 require "net/http"
 require "uri"
 
-module TouchQue
-  # Plain HTTP for the clients that do not sign with the API key (agents, TouchQue
+module Touchque
+  # Plain HTTP for the clients that do not sign with the API key (agents, Touchque
   # Login, MCP). Never follows redirects.
   module Transport
     module_function
@@ -39,16 +39,16 @@ module TouchQue
       data = data.is_a?(Hash) ? data : {}
       data["code"] ||= data["error"]
       data["retryAfter"] ||= data["retry_after"].to_i if data["retry_after"]
-      APIError.for(status, data, data["error_description"] || data["error"] || "TouchQue API error: HTTP #{status}")
+      APIError.for(status, data, data["error_description"] || data["error"] || "Touchque API error: HTTP #{status}")
     end
   end
 
-  # The agent side: an AI agent calls TouchQue with its OWN key, never with your API
+  # The agent side: an AI agent calls Touchque with its OWN key, never with your API
   # key. It signs a private_key_jwt assertion (RFC 7523) for a 10-minute token bound to
   # its key with DPoP (RFC 9449), and proves the key on every call, so a stolen token is
   # useless on its own.
   #
-  #   agent = TouchQue::Agent.new          # TQ_AGENT_ID, TQ_AGENT_KEY (a JWK as JSON, or an EC PEM)
+  #   agent = Touchque::Agent.new          # TQ_AGENT_ID, TQ_AGENT_KEY (a JWK as JSON, or an EC PEM)
   #   approved = agent.require_approval("ayse@acme.com", "PAY_INVOICE", [payment]) do |state|
   #     say "Type #{state["challengeCode"]} on your phone"
   #   end
@@ -66,7 +66,7 @@ module TouchQue
       raise ConfigError, "Set TQ_AGENT_KEY (or private_key:): the agent's private key" if private_key.nil? || private_key.to_s.empty?
 
       @agent_id = agent_id
-      @key = SigningKey.load(private_key, "TouchQue::Agent")
+      @key = SigningKey.load(private_key, "Touchque::Agent")
       jwk = private_key.is_a?(Hash) ? Util.stringify(private_key) : (private_key.to_s.lstrip.start_with?("{") ? Util.parse_json(private_key) : nil)
       @kid = kid || (jwk.is_a?(Hash) && jwk["kid"]) || AgentKeys.thumbprint(@key.public_jwk)
       @base_url = (base_url || (ENV["TQ_API_URL"].to_s.empty? ? DEFAULT_BASE_URL : ENV.fetch("TQ_API_URL"))).chomp("/")
@@ -87,14 +87,14 @@ module TouchQue
       end
     end
 
-    # The agent as TouchQue sees it: its action types, owner, review date and workspace.
+    # The agent as Touchque sees it: its action types, owner, review date and workspace.
     def me
       request("GET", "/agents/me")
     end
 
-    # Asks the person to approve on their TouchQue phone. Show "challengeCode" in your
+    # Asks the person to approve on their Touchque phone. Show "challengeCode" in your
     # conversation (presence interactive, the default): the person types it on the phone.
-    # TouchQue draws the phone's rows from +authorization_details+ (RFC 9396).
+    # Touchque draws the phone's rows from +authorization_details+ (RFC 9396).
     # "requiresPasskey" (over the policy's requirePasskeyAbove): the person approves with a
     # passkey on your page instead, not on the phone.
     def request_approval(user, type, authorization_details, reason: nil, presence: nil, expires_in: nil, locale: nil,
@@ -159,7 +159,7 @@ module TouchQue
         state = get_approval(approval_id)
         return state if state["status"] == "approved" && state["approvalToken"]
         raise ApprovalError.new(approval_id, state["status"], state["reason"]) if ENDED.include?(state["status"])
-        raise TimeoutError.new("TouchQue: approval '#{approval_id}' was not approved within #{timeout}s", approval_id) if Time.now + interval > deadline
+        raise TimeoutError.new("Touchque: approval '#{approval_id}' was not approved within #{timeout}s", approval_id) if Time.now + interval > deadline
 
         sleep interval
       end
@@ -190,7 +190,7 @@ module TouchQue
     end
 
     # A call with the agent's token and a fresh DPoP proof; one retry with a new token
-    # when TouchQue no longer knows it.
+    # when Touchque no longer knows it.
     def request(method, path, body = nil, retried: false)
       token = access_token
       url = @base_url + path

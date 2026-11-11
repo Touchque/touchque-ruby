@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   # What the relay wants sent back: a status, a JSON body and headers. +on_authenticated+
   # receives the pending success response and may change it (e.g. add a Set-Cookie);
   # the handler sets the body afterwards.
@@ -88,7 +88,7 @@ module TouchQue
   end
 
   # Framework-agnostic relay: the routes a frontend (@touchque/web) needs for push 2FA,
-  # offline codes and passkeys, so you don't hand-write them (TouchQue::Rack::Relay
+  # offline codes and passkeys, so you don't hand-write them (Touchque::Rack::Relay
   # mounts it in Rails, Sinatra or any Rack app):
   #
   #   POST   /enroll/start                  (signed in)  generate_secret answer
@@ -148,7 +148,7 @@ module TouchQue
       return if get_login_user || self.class.warned
 
       self.class.warned = true
-      TouchQue.log :warn, "[TouchQue] RelayHandler: POST /login takes the username from the request body" \
+      Touchque.log :warn, "[Touchque] RelayHandler: POST /login takes the username from the request body" \
            "#{@offline_enabled ? ", and so do the offline routes" : "; the offline routes are disabled until you set it"}" \
            ". Set get_login_user to bind them to your first factor (password step) so they cannot be used against arbitrary users."
     end
@@ -255,7 +255,7 @@ module TouchQue
       res.set_header("Cache-Control", "no-store")
     end
 
-    # The username used for on_authenticated is the one TouchQue returns for the code, never the body's.
+    # The username used for on_authenticated is the one Touchque returns for the code, never the body's.
     def offline_challenge(ctx)
       return offline_disabled unless @offline_enabled
 
@@ -363,7 +363,7 @@ module TouchQue
 
       r = @tq.webauthn.authenticate_verify(body_string(ctx[:body], "requestId"), body_hash(ctx[:body], "response"))
       who = r["externalUsername"]
-      # Open the session only for the user TouchQue says was approved; a name the browser sent is never trusted.
+      # Open the session only for the user Touchque says was approved; a name the browser sent is never trusted.
       if r["success"] && @get_login_user && who.is_a?(String) && !same_user?(@get_login_user.call(ctx[:req]), who)
         return RelayResponse.new(401, { "error" => "verification_failed" })
       end
@@ -482,7 +482,7 @@ module TouchQue
 
     def offline_disabled
       RelayResponse.new(403, { "error" => "OFFLINE_REQUIRES_FIRST_FACTOR",
-                               "message" => "Offline sign-in is disabled: configure get_login_user (or allow_offline_without_first_factor) on the TouchQue relay." })
+                               "message" => "Offline sign-in is disabled: configure get_login_user (or allow_offline_without_first_factor) on the Touchque relay." })
     end
 
     # Same status mapping as the guard middleware, kept in sync with the Node SDK.
@@ -496,13 +496,13 @@ module TouchQue
           return RelayResponse.new(error.status, { "error" => [error.error, error.data["message"], error.message].find { |t| t.is_a?(String) && !t.empty? } || "request_failed" })
         end
 
-        TouchQue.log :error, "[TouchQue Relay Error] #{error.class}: #{error.message}"
+        Touchque.log :error, "[Touchque Relay Error] #{error.class}: #{error.message}"
         RelayResponse.new(503, { "error" => "2FA_UNAVAILABLE", "message" => "The 2FA verification service is temporarily unavailable." })
       end
     end
 
-    # A client-range TouchQue status is forwarded with its machine-readable code only
-    # (never TouchQue's message text); anything else becomes 502.
+    # A client-range Touchque status is forwarded with its machine-readable code only
+    # (never Touchque's message text); anything else becomes 502.
     def relay_error(error)
       if error.is_a?(APIError) && error.status < 500
         return RelayResponse.new(error.status, { "error" => [error.code, error.error].find { |t| t.is_a?(String) && !t.empty? } || "request_failed" })

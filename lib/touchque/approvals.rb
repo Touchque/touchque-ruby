@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   # Transaction details the way the API normalizes and digests them.
   module Details
     # What JavaScript's trim removes, as the API trims: ASCII and Unicode spaces (U+00A0,
@@ -45,7 +45,7 @@ module TouchQue
   # approval is signed over the request id, the action type, the number-match code and
   # a digest of the details the user was shown. The proof arrives in the SUCCESS webhook
   # ("approvalProof") and in the consumed approval. Verifying it does not require
-  # trusting TouchQue.
+  # trusting Touchque.
   module ApprovalProof
     PREFIX = "touchque-approve:v2"
 
@@ -89,7 +89,7 @@ module TouchQue
 
   # What a partner's server checks before executing what an AI agent asked for: the
   # approval token's claims match the transaction (person, action type, authorization
-  # details) and, offline, its ES256 signature against TouchQue's keys
+  # details) and, offline, its ES256 signature against Touchque's keys
   # (GET /agents/jwks.json). Amounts compare as decimals ("500" = "500.00"), IBANs
   # without spaces in any case, currencies in any case; a Hash matches a token with
   # exactly one entry, an Array matches entry by entry.

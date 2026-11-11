@@ -2,23 +2,23 @@
 
 require "rack"
 
-module TouchQue
+module Touchque
   module Rack
     # The relay as a Rack app: mount it wherever your frontend (@touchque/web) expects it.
     #
     #   # Rails, config/routes.rb
-    #   mount TouchQue::Rack::Relay.new(
+    #   mount Touchque::Rack::Relay.new(
     #     get_user_id: ->(req) { req.session["user_email"] },
     #     get_login_user: ->(req) { req.session["password_verified_user"] },
     #     on_authenticated: ->(req, response, info) { req.session["user_email"] = info["externalUsername"] }
     #   ) => "/touchque"
     #
     #   # Sinatra / plain Rack
-    #   map("/touchque") { run TouchQue::Rack::Relay.new(get_user_id: ->(req) { req.session["user"] }) }
+    #   map("/touchque") { run Touchque::Rack::Relay.new(get_user_id: ->(req) { req.session["user"] }) }
     #
     # The callbacks get the Rack::Request (its session is the app's session). The client IP
     # is Rack::Request#ip: configure trusted proxies when you run behind a load balancer.
-    # See TouchQue::RelayHandler for the routes and options.
+    # See Touchque::RelayHandler for the routes and options.
     class Relay
       MAX_BODY_BYTES = 64 * 1024
 
@@ -57,9 +57,9 @@ module TouchQue
 
       private
 
-      # Built on the first request, so TouchQue.client can be configured after the routes load.
+      # Built on the first request, so Touchque.client can be configured after the routes load.
       def handler
-        @handler || @lock.synchronize { @handler ||= RelayHandler.new(@client || TouchQue.client, **@options) }
+        @handler || @lock.synchronize { @handler ||= RelayHandler.new(@client || Touchque.client, **@options) }
       end
 
       def join(previous, value)

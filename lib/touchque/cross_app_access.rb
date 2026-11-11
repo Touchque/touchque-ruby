@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   # A refused ID-JAG or exchange (Cross App Access). +error+ is the OAuth error:
   # invalid_grant for a bad ID-JAG, else what the server answered.
   class IdJagError < Error
@@ -15,15 +15,15 @@ module TouchQue
 
   # Cross App Access: Identity Assertion JWT Authorization Grants (ID-JAG,
   # draft-ietf-oauth-identity-assertion-authz-grant, an open standard). An
-  # organization's identity provider (TouchQue SSO) decides which of its apps may reach
+  # organization's identity provider (Touchque SSO) decides which of its apps may reach
   # which other service for its members; the app trades a member's ID token for an
   # ID-JAG there, then the ID-JAG for an access token at the other service's
   # authorization server, with no consent screen per member. Your own authorization
   # server takes them with IdJagVerifier.
   #
-  #   jag = TouchQue::CrossAppAccess.request_id_jag(issuer: "https://sso.touchque.com", client_id: id, client_secret: secret,
+  #   jag = Touchque::CrossAppAccess.request_id_jag(issuer: "https://sso.touchque.com", client_id: id, client_secret: secret,
   #                                                 id_token: id_token, audience: "https://auth.files.example")
-  #   tokens = TouchQue::CrossAppAccess.redeem_id_jag(token_endpoint: "https://auth.files.example/token", client_id: "acme",
+  #   tokens = Touchque::CrossAppAccess.redeem_id_jag(token_endpoint: "https://auth.files.example/token", client_id: "acme",
   #                                                   client_secret: files_secret, assertion: jag["assertion"])
   module CrossAppAccess
     ID_JAG_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:id-jag"
@@ -108,7 +108,7 @@ module TouchQue
   # Your authorization server, taking ID-JAGs from an organization's identity provider:
   # checks the one an authenticated client presents (jwt-bearer grant) and uses it once.
   #
-  #   verifier = TouchQue::IdJagVerifier.new(issuer: "https://sso.touchque.com", audience: "https://auth.files.example")
+  #   verifier = Touchque::IdJagVerifier.new(issuer: "https://sso.touchque.com", audience: "https://auth.files.example")
   #   claims = verifier.verify(params[:assertion], client_id: authenticated_client_id)
   #
   # +first_use+ (a callable jti, exp → true when new) lets several processes share a

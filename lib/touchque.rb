@@ -29,13 +29,13 @@ require_relative "touchque/agent_card"
 require_relative "touchque/hosted_login"
 require_relative "touchque/login_session"
 
-# TouchQue: push approvals with number matching, passkeys, silent sign-ins, offline
-# codes, verified webhooks, TouchQue Actions, AI agent approvals, TouchQue Login and the
+# Touchque: push approvals with number matching, passkeys, silent sign-ins, offline
+# codes, verified webhooks, Touchque Actions, AI agent approvals, Touchque Login and the
 # server side of the Mobile SDK.
 #
 #   # TQ_API_KEY=tq_...  TQ_API_SECRET=...
-#   step = TouchQue.client.start("SEND_MONEY", "jane@acme.com", details: { "Amount" => "250 EUR" })
-module TouchQue
+#   step = Touchque.client.start("SEND_MONEY", "jane@acme.com", details: { "Amount" => "250 EUR" })
+module Touchque
   @lock = Mutex.new
 
   class << self
@@ -43,11 +43,11 @@ module TouchQue
 
     # Where the SDK reports its own problems: a misconfigured guard, a failed on_challenge,
     # a relay without get_login_user. nil (the default) logs nothing; set any Logger
-    # (TouchQue.logger = Rails.logger). Lines carry an error's class and message, never
+    # (Touchque.logger = Rails.logger). Lines carry an error's class and message, never
     # request data.
     attr_accessor :logger
 
-    # @api private: one of the SDK's own problems (:warn or :error) to TouchQue.logger, if any.
+    # @api private: one of the SDK's own problems (:warn or :error) to Touchque.logger, if any.
     # A logger that raises never breaks the request.
     def log(level, message)
       logger&.public_send(level, message)
@@ -55,7 +55,7 @@ module TouchQue
       nil
     end
 
-    # Options for TouchQue.client (api_key:, api_secret:, base_url:, timeout:); anything
+    # Options for Touchque.client (api_key:, api_secret:, base_url:, timeout:); anything
     # left out comes from the environment.
     def configure(**options)
       @lock.synchronize do
@@ -75,7 +75,7 @@ module TouchQue
       @replay_cache || @lock.synchronize { @replay_cache ||= MemoryReplayCache.new }
     end
 
-    # TouchQue Login settings: domain:, client_id:, client_secret:, scope:, audience:,
+    # Touchque Login settings: domain:, client_id:, client_secret:, scope:, audience:,
     # redirect_uri:, callback_path:, login_path:, post_logout_redirect_uri:, session_max_age:.
     def login_options=(options)
       @login_options = Util.stringify(options || {}).transform_keys(&:to_sym)
@@ -86,12 +86,12 @@ module TouchQue
       @login_options || {}
     end
 
-    # The TouchQue Login client of login_options.
+    # The Touchque Login client of login_options.
     def hosted_login
       @hosted_login || @lock.synchronize do
         @hosted_login ||= begin
           o = login_options
-          raise ConfigError, "Set config.touchque.login (domain:, client_id:) or TouchQue.login_options" if o[:domain].to_s.empty?
+          raise ConfigError, "Set config.touchque.login (domain:, client_id:) or Touchque.login_options" if o[:domain].to_s.empty?
 
           HostedLogin.new(domain: o[:domain], client_id: o[:client_id], client_secret: o[:client_secret],
                           scope: o[:scope] || "openid profile email", audience: o[:audience],
@@ -100,10 +100,10 @@ module TouchQue
       end
     end
 
-    # The secret that encrypts the TouchQue Login cookies (at least 32 characters).
+    # The secret that encrypts the Touchque Login cookies (at least 32 characters).
     def login_secret
       secret = @login_secret.respond_to?(:call) ? @login_secret.call : @login_secret
-      raise ConfigError, "Set TouchQue.login_secret (32+ characters) for the TouchQue Login cookies" if secret.to_s.length < 32
+      raise ConfigError, "Set Touchque.login_secret (32+ characters) for the Touchque Login cookies" if secret.to_s.length < 32
 
       secret
     end

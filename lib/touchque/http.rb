@@ -4,7 +4,7 @@ require "net/http"
 require "openssl"
 require "uri"
 
-module TouchQue
+module Touchque
   # Every partner API call: signed with HMAC-SHA256 over
   # "METHOD:pathWithQuery:timestamp:nonce:sha256(body)", sent once, never redirected.
   class HTTP
@@ -100,8 +100,8 @@ module TouchQue
           data["retryAfter"] = res["Retry-After"].to_i
         end
         if status < 400
-          # An API endpoint never redirects; one that does is not TouchQue's.
-          raise APIError.new(status, data, "TouchQue: unexpected redirect (HTTP #{status}); redirects are never followed.")
+          # An API endpoint never redirects; one that does is not Touchque's.
+          raise APIError.new(status, data, "Touchque: unexpected redirect (HTTP #{status}); redirects are never followed.")
         end
         raise APIError.for(status, data)
       end

@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   module Resources
     # Device risk (a paid add-on, off until your workspace turns it on): a visitor ID for
     # every browser on your sign-up, password-reset, sign-in or approval page. The page
     # identifies with @touchque/web (deviceRisk.identify({ siteKey, purpose }) gives
     # { visitorId, requestId, confidence }) and sends you the requestId. Never trust the
     # page's copy: read the identification here (get_event) or check it for an account
-    # (check). TouchQue keeps keyed hashes only, with a key of your workspace alone, and its
+    # (check). Touchque keeps keyed hashes only, with a key of your workspace alone, and its
     # risk engine decides.
     #
     # Every signal only ever asks for more: "stepUp" means an extra check on this page (an

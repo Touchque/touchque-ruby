@@ -1,16 +1,16 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   module Resources
-    # Safe Guard: a Safe transaction approved on the approver's phone for TouchQueSafeGuard (the
+    # Safe Guard: a Safe transaction approved on the approver's phone for TouchqueSafeGuard (the
     # guard on your Safe). You send the raw transaction; the phone gets the raw fields only,
     # decodes them itself, shows its own rows and signs, with a key only its biometrics unlock, a
-    # 105-byte approval of the hash it computed. TouchQue never holds a key that can approve.
+    # 105-byte approval of the hash it computed. Touchque never holds a key that can approve.
     #
     # 1. request(user, type, safe_tx) asks the phone (same pipeline as login.request: risk
     #    engine, push limit, Vishing Shield, case code, always biometrics).
     # 2. wait_for_approval(request_id) (or poll status) until the phone answered.
-    # 3. Check safeTx["approval"] yourself with TouchQue::SafeApproval.verify: it needs your own
+    # 3. Check safeTx["approval"] yourself with Touchque::SafeApproval.verify: it needs your own
     #    transaction and the approver's key from the guard, not this answer. Pass purpose:
     #    "schedule" for a governance change; without it only "approve" is accepted.
     # 4. "purpose" "approve": SafeApproval.with_approvals(owner_signatures, approvals) as the
@@ -60,9 +60,9 @@ module TouchQue
           case s["status"]
           when "CONFIRMED" then return s
           when "REJECTED" then raise RejectedError.new(request_id)
-          when "EXPIRED" then raise TimeoutError.new("TouchQue: request '#{request_id}' expired before it was approved.", request_id)
+          when "EXPIRED" then raise TimeoutError.new("Touchque: request '#{request_id}' expired before it was approved.", request_id)
           end
-          raise TimeoutError.new("TouchQue: Safe Guard approval '#{request_id}' was not given within #{timeout}s.", request_id) if Time.now > deadline
+          raise TimeoutError.new("Touchque: Safe Guard approval '#{request_id}' was not given within #{timeout}s.", request_id) if Time.now > deadline
 
           sleep poll_interval
         end

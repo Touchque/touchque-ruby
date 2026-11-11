@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   module Resources
-    # Silent sign-ins: ask TouchQue's risk engine whether a sign-in needs the phone at
+    # Silent sign-ins: ask Touchque's risk engine whether a sign-in needs the phone at
     # all, and manage the browsers it knows for a user. A browser becomes known when the
     # user approves a request that carried its device-bound key proof; later +check+ with
     # a fresh proof from the same browser answers "prompt" => false when nothing about
@@ -38,7 +38,7 @@ module TouchQue
       # Should this sign-in ask the phone? Skip the push only when "prompt" is false;
       # on any error, ask as usual. A critical action always asks.
       # max_age_seconds: your own limit on how long ago the last phone approval in this
-      # browser may be (0 = always ask). context: for your TouchQue Actions only.
+      # browser may be (0 = always ask). context: for your Touchque Actions only.
       # device_risk_request_id: the page's identification (deviceRisk.identify), or device_risk:
       # the page's report (deviceRisk.collect); a device signal is never silent.
       def check(external_username, type: nil, client_ip: nil, user_agent: nil, browser_proof: nil,
@@ -57,7 +57,7 @@ module TouchQue
         self.class.parse_check(@http.post("/risk/check", body))
       end
 
-      # The browsers TouchQue knows for a user: {"browsers" => [...]}.
+      # The browsers Touchque knows for a user: {"browsers" => [...]}.
       def browsers(external_username)
         raise ConfigError, "risk.browsers() needs the user (external_username)" if external_username.to_s.empty?
 
@@ -76,7 +76,7 @@ module TouchQue
     # Never Locked Out: move a user whose phone is lost, dead or replaced to a new phone
     # without a help desk. Users name colleagues who vouch for them (set_vouchers, behind
     # an approval on their phone); when the phone is gone, after the password: start (show
-    # "bindUri" as a QR for the TouchQue app on the new phone), poll status and show each
+    # "bindUri" as a QR for the Touchque app on the new phone), poll status and show each
     # voucher's "code"; after a cooling-off nobody vetoed the account is on the new phone.
     class Recovery
       OPEN_STATUSES = %w[AWAITING_DEVICE VOUCHING COOLING].freeze

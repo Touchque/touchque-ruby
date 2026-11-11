@@ -4,11 +4,11 @@ require_relative "lib/touchque/version"
 
 Gem::Specification.new do |spec|
   spec.name = "touchque"
-  spec.version = TouchQue::VERSION
-  spec.authors = ["TouchQue"]
+  spec.version = Touchque::VERSION
+  spec.authors = ["Touchque"]
   spec.email = ["developer@touchque.com"]
-  spec.summary = "Official Ruby SDK for TouchQue: push approvals with number matching, passkeys, silent sign-ins, webhooks, Actions, AI agents and TouchQue Login."
-  spec.description = "Server SDK for TouchQue Authenticator and TouchQue Login, with Rails integration (Railtie, controller concerns) and a Rack relay for @touchque/web."
+  spec.summary = "Official Ruby SDK for Touchque: push approvals with number matching, passkeys, silent sign-ins, webhooks, Actions, AI agents and Touchque Login."
+  spec.description = "Server SDK for Touchque Authenticator and Touchque Login, with Rails integration (Railtie, controller concerns) and a Rack relay for @touchque/web."
   spec.homepage = "https://touchque.com"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.1"

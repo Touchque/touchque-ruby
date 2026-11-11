@@ -14,7 +14,7 @@ require "touchque/railtie"
 TENANT = FakeTenant.new
 WEBHOOK_EVENTS = []
 
-class TouchQueTestApp < Rails::Application
+class TouchqueTestApp < Rails::Application
   config.root = __dir__
   config.eager_load = false
   config.secret_key_base = "s" * 64
@@ -28,7 +28,7 @@ class TouchQueTestApp < Rails::Application
 end
 
 class TransfersController < ActionController::Base
-  include TouchQue::Rails::Guard
+  include Touchque::Rails::Guard
 
   require_touchque "SEND_MONEY", only: :create, user: -> { request.headers["X-User"] }, details: -> { { "Amount" => params[:amount].to_s } }
 
@@ -38,7 +38,7 @@ class TransfersController < ActionController::Base
 end
 
 class WebhooksController < ActionController::Base
-  include TouchQue::Rails::Webhook
+  include Touchque::Rails::Webhook
 
   verify_touchque_webhook
 
@@ -49,7 +49,7 @@ class WebhooksController < ActionController::Base
 end
 
 class AccountController < ActionController::Base
-  include TouchQue::Rails::HostedLogin
+  include Touchque::Rails::HostedLogin
 
   before_action :require_touchque_sign_in
 
@@ -58,14 +58,14 @@ class AccountController < ActionController::Base
   end
 end
 
-TouchQueTestApp.initialize!
-TouchQue.hosted_login = TouchQue::HostedLogin.new(domain: FakeTenant::ISSUER, client_id: FakeTenant::CLIENT, client_secret: "s3cret", transport: TENANT.transport)
-TouchQueTestApp.routes.draw do
+TouchqueTestApp.initialize!
+Touchque.hosted_login = Touchque::HostedLogin.new(domain: FakeTenant::ISSUER, client_id: FakeTenant::CLIENT, client_secret: "s3cret", transport: TENANT.transport)
+TouchqueTestApp.routes.draw do
   post "/transfer" => "transfers#create"
   post "/webhooks/touchque" => "webhooks#create"
   get "/account" => "account#show"
-  TouchQue::Rails.login_routes(self)
-  mount TouchQue::Rack::Relay.new(
+  Touchque::Rails.login_routes(self)
+  mount Touchque::Rack::Relay.new(
     get_user_id: ->(req) { req.get_header("HTTP_X_USER") },
     get_login_user: ->(req) { req.get_header("HTTP_X_PASSWORD_OK") },
     on_authenticated: ->(_req, response, info) { response.add_header("Set-Cookie", "app_session=#{info["externalUsername"]}; Path=/; HttpOnly") }
@@ -78,7 +78,7 @@ class RailsTest < FakeApiTest
   include Rack::Test::Methods
 
   def app
-    TouchQueTestApp
+    TouchqueTestApp
   end
 
   def json
@@ -86,9 +86,9 @@ class RailsTest < FakeApiTest
   end
 
   def test_railtie_configures_the_client
-    assert_equal "test_secret", TouchQue.client.api_secret
-    assert_equal FakeTenant::ISSUER, TouchQue.login_options[:domain]
-    assert TouchQue.login_secret.length >= 32
+    assert_equal "test_secret", Touchque.client.api_secret
+    assert_equal FakeTenant::ISSUER, Touchque.login_options[:domain]
+    assert Touchque.login_secret.length >= 32
   end
 
   def test_require_touchque_runs_the_action_once_after_the_phone
@@ -99,7 +99,7 @@ class RailsTest < FakeApiTest
     assert_equal "no-store", last_response.headers["Cache-Control"]
     assert_equal [{ "label" => "Amount", "value" => "250 EUR" }], api.last_call["body"]["details"]
     token = json["token"]
-    header TouchQue::Guard::TOKEN_HEADER, token
+    header Touchque::Guard::TOKEN_HEADER, token
     post "/transfer", { amount: "250 EUR" }
     assert_equal 202, last_response.status
     api.approve
@@ -108,7 +108,7 @@ class RailsTest < FakeApiTest
     post "/transfer", { amount: "250 EUR" }
     assert_equal [200, "DEVICE"], [last_response.status, json["via"]]
     header "X-User", nil
-    header TouchQue::Guard::TOKEN_HEADER, nil
+    header Touchque::Guard::TOKEN_HEADER, nil
     post "/transfer", { amount: "1" }
     assert_equal 401, last_response.status
     api.link("bo@acme.com")
@@ -128,11 +128,11 @@ class RailsTest < FakeApiTest
     assert_equal "cy@acme.com", api.last_call["body"]["externalUsername"]
     token = json["token"]
     api.approve
-    header TouchQue::Guard::TOKEN_HEADER, token
+    header Touchque::Guard::TOKEN_HEADER, token
     post "/touchque/login", "{}", "CONTENT_TYPE" => "application/json"
     assert_equal [200, "success"], [last_response.status, json["status"]]
     assert_includes Array(last_response.headers["set-cookie"]).join("\n"), "app_session=cy@acme.com"
-    header TouchQue::Guard::TOKEN_HEADER, nil
+    header Touchque::Guard::TOKEN_HEADER, nil
     header "X-User", "cy@acme.com"
     get "/touchque/enroll/status"
     assert_equal({ "linked" => true, "used" => true, "deviceId" => "dev-1" }, json)
@@ -145,7 +145,7 @@ class RailsTest < FakeApiTest
 
   def test_relay_rate_limits_and_keeps_offline_off_without_a_first_factor
     api.link("dee@acme.com")
-    relay = TouchQue::Rack::Relay.new(client: tq, get_user_id: ->(_) {}, rate_limit: { per_user: 2, per_ip: 100 })
+    relay = Touchque::Rack::Relay.new(client: tq, get_user_id: ->(_) {}, rate_limit: { per_user: 2, per_ip: 100 })
     env = ->(path, body) { Rack::MockRequest.env_for(path, method: "POST", input: JSON.generate(body), "CONTENT_TYPE" => "application/json") }
     assert_equal 403, relay.call(env.call("/offline/challenge", { externalUsername: "dee@acme.com" }))[0]
     assert_equal 202, relay.call(env.call("/login", { externalUsername: "dee@acme.com" }))[0]
@@ -157,7 +157,7 @@ class RailsTest < FakeApiTest
   end
 
   def test_relay_refuses_a_malformed_credential_id
-    relay = TouchQue::Rack::Relay.new(client: tq, get_user_id: ->(_) { "dee@acme.com" }, get_login_user: ->(_) {})
+    relay = Touchque::Rack::Relay.new(client: tq, get_user_id: ->(_) { "dee@acme.com" }, get_login_user: ->(_) {})
     env = Rack::MockRequest.env_for("/passkey/credentials/x", method: "DELETE")
     env["PATH_INFO"] = "/passkey/credentials/%zz"
     status, _, body = relay.call(env)
@@ -165,16 +165,16 @@ class RailsTest < FakeApiTest
   end
 
   def test_rack_relay_loads_without_rails
-    script = 'require "touchque"; abort "Rails is loaded" if defined?(Rails); print TouchQue::Rack::Relay.name'
+    script = 'require "touchque"; abort "Rails is loaded" if defined?(Rails); print Touchque::Rack::Relay.name'
     out, status = Open3.capture2e(RbConfig.ruby, "-I", File.expand_path("../lib", __dir__), "-e", script)
     assert status.success?, out
-    assert_equal "TouchQue::Rack::Relay", out
+    assert_equal "Touchque::Rack::Relay", out
   end
 
   def test_webhook_controller_verifies_and_skips_replays
     WEBHOOK_EVENTS.clear
     payload = { "event" => "APPROVAL_REVOKED", "requestId" => "r1", "timestamp" => Time.now.utc.iso8601(3), "jti" => "jti-77-#{SecureRandom.hex(4)}" }
-    sig = TouchQue::Util.hmac_hex("test_secret", TouchQue::Resources::Webhook.canonicalize(JSON.generate(payload)))
+    sig = Touchque::Util.hmac_hex("test_secret", Touchque::Resources::Webhook.canonicalize(JSON.generate(payload)))
     deliver = ->(signature) { post "/webhooks/touchque", JSON.generate(payload), "CONTENT_TYPE" => "application/json", "HTTP_X_SIGNATURE" => signature }
     deliver.call(sig)
     assert_equal 200, last_response.status
@@ -192,7 +192,7 @@ class RailsTest < FakeApiTest
     get "/login", { returnTo: "/account" }
     assert_equal 302, last_response.status
     authorize = last_response.location
-    assert_equal "http://example.org/callback", TouchQue::HostedLogin.params_of(authorize)["redirect_uri"]
+    assert_equal "http://example.org/callback", Touchque::HostedLogin.params_of(authorize)["redirect_uri"]
     code, state = TENANT.authorize(authorize)
     get "/callback", { code: code, state: state }
     assert_equal [302, "/account"], [last_response.status, URI.parse(last_response.location).path]

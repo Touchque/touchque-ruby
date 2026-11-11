@@ -24,7 +24,7 @@ module TestSupport
     JSON.parse(File.read(File.join(shared_root, "fixtures", name), encoding: "UTF-8"))
   end
 
-  # The shared Node fake TouchQue API (testing/fake-touchque-api.mjs): it verifies
+  # The shared Node fake Touchque API (testing/fake-touchque-api.mjs): it verifies
   # this SDK's request signatures exactly like the real API, over a real HTTP round trip.
   class FakeApi
     attr_reader :base_url
@@ -49,7 +49,7 @@ module TestSupport
     end
 
     def client
-      TouchQue::Client.new(api_key: "tq_test_key", api_secret: "test_secret", base_url: @base_url)
+      Touchque::Client.new(api_key: "tq_test_key", api_secret: "test_secret", base_url: @base_url)
     end
 
     def post(path, body = {})

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-module TouchQue
-  # Encrypted cookies for apps that use TouchQue Login without a session store: the
+module Touchque
+  # Encrypted cookies for apps that use Touchque Login without a session store: the
   # sign-in in progress (state, nonce, PKCE verifier, where to go back) and the
   # signed-in session (user claims, tokens). AES-256-GCM with a key derived from your
   # secret; values too big for one cookie are split across several (name.0, name.1...).

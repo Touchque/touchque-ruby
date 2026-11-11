@@ -5,7 +5,7 @@ require "openssl"
 require "securerandom"
 require "uri"
 
-module TouchQue
+module Touchque
   # Small helpers shared by the SDK (no third-party gems).
   module Util
     module_function

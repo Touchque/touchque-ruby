@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   module Resources
     # AI agents as identities of their own: register an agent with its PUBLIC key, give
     # it an accountable owner and the action types it may ask approvals for, suspend,
     # revoke or stop every agent at once. The agent itself never gets your API key: it
-    # signs in with its own key (TouchQue::Agent).
+    # signs in with its own key (Touchque::Agent).
     #
-    #   keys = TouchQue::AgentKeys.generate                     # where the agent runs
+    #   keys = Touchque::AgentKeys.generate                     # where the agent runs
     #   agent = tq.agents.create("Invoice bot", ["PAY_INVOICE"], public_key: keys["publicJwk"])
     class Agents
       attr_reader :vault
@@ -23,7 +23,7 @@ module TouchQue
 
       # Uses an agent's approval exactly once, right before you execute: checks the
       # expectation against the token first (nothing is used on a mismatch), then
-      # TouchQue checks the token and marks it used, and the answer is checked again.
+      # Touchque checks the token and marks it used, and the answer is checked again.
       def redeem_approval(token, user: nil, type: nil, authorization_details: nil)
         expect = { user: user, type: type, authorization_details: authorization_details }
         ApprovalToken.assert_matches!(ApprovalToken.decode(token)["claims"], **expect)
@@ -201,9 +201,9 @@ module TouchQue
     end
 
     # The token vault for your agents (tq.agents.vault): after your own OAuth flow with a
-    # person, deposit their tokens; TouchQue keeps them sealed and refreshes them, and the
+    # person, deposit their tokens; Touchque keeps them sealed and refreshes them, and the
     # agents a connection names get a short-lived access token
-    # (TouchQue::Agent#get_connection_token), never the refresh token.
+    # (Touchque::Agent#get_connection_token), never the refresh token.
     class AgentVault
       def initialize(http)
         @http = http

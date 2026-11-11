@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   module Resources
-    # Setup secrets (the QR code the TouchQue app scans) and a user's link status.
+    # Setup secrets (the QR code the Touchque app scans) and a user's link status.
     class Auth
       def initialize(http)
         @http = http
       end
 
-      # A new setup secret: show +qrCodeDataUrl+ so the TouchQue app links the phone.
+      # A new setup secret: show +qrCodeDataUrl+ so the Touchque app links the phone.
       # 409 when an unscanned or used secret exists (reset_secret issues a new one).
       def generate_secret(external_username)
         @http.post("/auth/generate-secret", { "externalUsername" => external_username })
@@ -42,8 +42,8 @@ module TouchQue
       #
       # details: transaction context for the approval screen, {"Amount" => "250 EUR"} or
       # [{label:, value:}], at most 8 lines (labels <= 40, values <= 120 characters). Build
-      # it from server-side state. browser_proof: the X-TouchQue-Browser header (silent
-      # sign-ins), passed through untouched. context: for your TouchQue Actions only.
+      # it from server-side state. browser_proof: the X-Touchque-Browser header (silent
+      # sign-ins), passed through untouched. context: for your Touchque Actions only.
       # security_changes: {password:, mfa:, device:, email:, phone:} => Time / ISO 8601 /
       # epoch ms, when each last changed in your system. destination: {kind:, value:, known:}
       # where the action sends money (shown in full on the phone). locale: "tr" or "en".
@@ -64,8 +64,8 @@ module TouchQue
         # A browser pairing by QR code (qr_pairings), confirmed on the phone: only that phone is asked, once.
         body["qrPairing"] = qr_pairing unless qr_pairing.to_s.empty?
         # Ask the person to type back on the phone a sign-in code another service sent them:
-        # { kind: "code", key: TouchQue::CodeReply.new_key["publicKey"], channel: "sms", target: "+**********26" }.
-        # status(id)["reply"]["ct"] holds only the ciphertext: TouchQue::CodeReply.open opens it. Not with qr_pairing.
+        # { kind: "code", key: Touchque::CodeReply.new_key["publicKey"], channel: "sms", target: "+**********26" }.
+        # status(id)["reply"]["ct"] holds only the ciphertext: Touchque::CodeReply.open opens it. Not with qr_pairing.
         body["reply"] = Util.stringify(reply) if reply
         body["clientSignals"] = client_signals if client_signals && !client_signals.empty?
         # The page's device report from @touchque/web (deviceRisk.collect), when the workspace
@@ -117,7 +117,7 @@ module TouchQue
             on_challenge.call(challenge)
           rescue StandardError => e
             # The caller's callback must not stop the wait.
-            TouchQue.log :warn, "[TouchQue] on_challenge failed: #{e.class}: #{e.message}"
+            Touchque.log :warn, "[Touchque] on_challenge failed: #{e.class}: #{e.message}"
           end
         end
         wait(request_id, sent["challengeCode"], timeout, poll_interval)
@@ -163,12 +163,12 @@ module TouchQue
               "provisional" => s["provisional"] ? true : false
             }
           when "REJECTED" then raise RejectedError.new(request_id)
-          when "EXPIRED" then raise TimeoutError.new("TouchQue: request '#{request_id}' expired before it was approved.", request_id)
+          when "EXPIRED" then raise TimeoutError.new("Touchque: request '#{request_id}' expired before it was approved.", request_id)
           end
           # Vishing Shield: tapped during a call, the request now waits for a passkey in the browser.
           raise PasskeyRequiredError.new(request_id, "step_up") if s["status"] == "PENDING" && s["requiresPasskey"]
           if Time.now + interval > deadline
-            raise TimeoutError.new("TouchQue: request '#{request_id}' was not approved within #{timeout}s. The user did not respond in time.", request_id)
+            raise TimeoutError.new("Touchque: request '#{request_id}' was not approved within #{timeout}s. The user did not respond in time.", request_id)
           end
 
           sleep interval
@@ -278,7 +278,7 @@ module TouchQue
       end
 
       # Salted, slow digests of each user's next codes, for checking typed codes while your
-      # server cannot reach TouchQue. Check a code with Offline.match_totp_verifier.
+      # server cannot reach Touchque. Check a code with Offline.match_totp_verifier.
       def totp_verifiers(external_usernames, from_step: nil, steps: nil)
         body = { "externalUsernames" => external_usernames.to_a }
         body["fromStep"] = from_step unless from_step.nil?
@@ -287,7 +287,7 @@ module TouchQue
       end
 
       # The step a typed code belongs to (the current one or one either side), or nil,
-      # without calling TouchQue. Accept each step once.
+      # without calling Touchque. Accept each step once.
       def self.match_totp_verifier(verifiers, user, code, at: nil)
         given = code.to_s.upcase.delete(" \t-")
         return nil unless given.length == 7 && given.chars.all? { |c| ALPHABET.include?(c) }

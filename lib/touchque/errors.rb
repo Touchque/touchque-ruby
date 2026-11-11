@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   # Base class of every error the SDK raises.
   class Error < StandardError; end
 
-  # TouchQue answered with an error (status 400 or more). +status+ is the HTTP
+  # Touchque answered with an error (status 400 or more). +status+ is the HTTP
   # status, +code+ the machine-readable code (+device_not_linked+,
   # +unknown_action+, +already_used+...) and +data+ the decoded JSON body.
   class APIError < Error
@@ -13,7 +13,7 @@ module TouchQue
     def initialize(status, data = nil, message = nil)
       @status = status
       @data = data.is_a?(Hash) ? data : {}
-      super(message || @data["message"] || @data["error"] || "TouchQue API error: HTTP #{status}")
+      super(message || @data["message"] || @data["error"] || "Touchque API error: HTTP #{status}")
     end
 
     # Machine-readable error code, e.g. "device_not_linked".
@@ -63,10 +63,10 @@ module TouchQue
   # The organization behind your workspace cannot use this feature here (HTTP
   # 403). +feature_reason+:
   # - +:not_in_plan+: not in its plan (+feature_not_in_plan+); an owner or admin
-  #   adds it in the TouchQue dashboard;
+  #   adds it in the Touchque dashboard;
   # - +:read_only+: being turned off (+feature_read_only+); reads still work for
   #   14 days, changes are refused;
-  # - +:off+: switched off on this TouchQue deployment (+feature_off+).
+  # - +:off+: switched off on this Touchque deployment (+feature_off+).
   # +feature+ is the catalog id (+device_risk+, +ai_agents+, +mobile_sdk+,
   # +ciam+...). An APIError, so existing +rescue+ blocks still catch it; rescue
   # one of the three subclasses to tell them apart.
@@ -94,7 +94,7 @@ module TouchQue
     REASON = :read_only
   end
 
-  # +feature_off+: the feature is switched off on this TouchQue deployment.
+  # +feature_off+: the feature is switched off on this Touchque deployment.
   class FeatureOffError < FeatureError
     REASON = :off
   end
@@ -105,11 +105,11 @@ module TouchQue
     "feature_off" => FeatureOffError,
   }.freeze
 
-  # The request never reached TouchQue (DNS, connection refused, timeout). Unlike
+  # The request never reached Touchque (DNS, connection refused, timeout). Unlike
   # APIError, generally safe to retry.
   class NetworkError < Error
     def initialize(message)
-      super("TouchQue: network request failed: #{message}")
+      super("Touchque: network request failed: #{message}")
     end
   end
 
@@ -129,19 +129,19 @@ module TouchQue
 
     def initialize(request_id)
       @request_id = request_id
-      super("TouchQue: request '#{request_id}' was rejected by the user.")
+      super("Touchque: request '#{request_id}' was rejected by the user.")
     end
   end
 
-  # A webhook is not from TouchQue, was changed, or is too old.
+  # A webhook is not from Touchque, was changed, or is too old.
   class WebhookSignatureError < Error
     def initialize(message)
-      super("TouchQue: webhook rejected: #{message}")
+      super("Touchque: webhook rejected: #{message}")
     end
   end
 
   # A correctly signed webhook with this +jti+ was already accepted. Usually a
-  # TouchQue retry of a delivery you processed: answer 200 so it stops, but do not
+  # Touchque retry of a delivery you processed: answer 200 so it stops, but do not
   # run your side effects again. A WebhookSignatureError, so existing rescues
   # still reject it.
   class WebhookReplayError < WebhookSignatureError
@@ -156,7 +156,7 @@ module TouchQue
   # Missing or invalid configuration, an undefined action type, or a wrong argument.
   class ConfigError < Error
     def initialize(message)
-      super("TouchQue config error: #{message}")
+      super("Touchque config error: #{message}")
     end
   end
 
@@ -171,9 +171,9 @@ module TouchQue
       @request_id = request_id
       @reason = reason
       super(if reason == "step_up"
-              "TouchQue: request '#{request_id}' must now be approved with a passkey: the user approved on the phone during a call."
+              "Touchque: request '#{request_id}' must now be approved with a passkey: the user approved on the phone during a call."
             else
-              "TouchQue: request '#{request_id}' must be approved with a passkey (phishing-resistant policy); no push was sent."
+              "Touchque: request '#{request_id}' must be approved with a passkey (phishing-resistant policy); no push was sent."
             end)
     end
   end
@@ -187,16 +187,16 @@ module TouchQue
       @approval_id = approval_id
       @status = status
       @reason = reason
-      super("TouchQue: approval '#{approval_id}' is #{status}#{reason ? " (#{reason})" : ""}.")
+      super("Touchque: approval '#{approval_id}' is #{status}#{reason ? " (#{reason})" : ""}.")
     end
   end
 
   # An approval does not say what you are about to execute (another person,
-  # action type, amount, recipient...), or it is not a valid token from TouchQue.
+  # action type, amount, recipient...), or it is not a valid token from Touchque.
   # Do not execute.
   class ApprovalMismatchError < Error
     def initialize(message)
-      super("TouchQue: #{message}")
+      super("Touchque: #{message}")
     end
   end
 
@@ -214,7 +214,7 @@ module TouchQue
     end
   end
 
-  # A TouchQue Login sign-in or token check failed; +error_code+ is machine-readable.
+  # A Touchque Login sign-in or token check failed; +error_code+ is machine-readable.
   class HostedLoginError < Error
     attr_reader :error_code, :description, :status
 

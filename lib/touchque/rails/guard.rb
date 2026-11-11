@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   module Rails
     # One line per protected action:
     #
     #   class TransfersController < ApplicationController
-    #     include TouchQue::Rails::Guard
+    #     include Touchque::Rails::Guard
     #     require_touchque "SEND_MONEY", only: :create,
     #                      details: -> { { "Amount" => params.require(:amount), "To" => params.require(:to) } }
     #
@@ -15,7 +15,7 @@ module TouchQue
     #   end
     #
     # Until the user approves this answers 202 {"touchque": step, "token": "..."}; your page
-    # shows the step and sends the same request again with header X-TouchQue-Token (the
+    # shows the step and sends the same request again with header X-Touchque-Token (the
     # @touchque/web loop). Once approved the action runs ONCE. Refusals answer 403 / 408 /
     # 423 / 429 with Retry-After. Options: user: (default: current_user's email, id or
     # username; for your login action, whoever just passed your password check), details:,
@@ -29,7 +29,7 @@ module TouchQue
 
       module ClassMethods
         def require_touchque(action, user: nil, details: nil, reference_id: nil, context: nil, silent_sign_in: false, enroll: true, **filter_options)
-          TouchQue::Guard.assert_silent_sign_in!(silent_sign_in, "require_touchque")
+          Touchque::Guard.assert_silent_sign_in!(silent_sign_in, "require_touchque")
           options = { user: user, details: details, reference_id: reference_id, context: context, silent_sign_in: silent_sign_in, enroll: enroll }
           before_action(**filter_options) { touchque_guard!(action, options) }
         end
@@ -44,14 +44,14 @@ module TouchQue
 
       def touchque_guard!(action, options)
         header = ->(name) { request.headers[name] }
-        input = TouchQue::Guard.input_from_headers(header)
+        input = Touchque::Guard.input_from_headers(header)
         silent = options[:silent_sign_in]
-        result = TouchQue::Guard.run(
-          TouchQue.client, touchque_value(options[:user]) || touchque_default_user, action,
+        result = Touchque::Guard.run(
+          Touchque.client, touchque_value(options[:user]) || touchque_default_user, action,
           details: touchque_value(options[:details]), reference_id: touchque_value(options[:reference_id]),
           ip: request.remote_ip, user_agent: request.user_agent, token: input[:token], offline: input[:offline],
           code: input[:code], code_type: input[:code_type], enroll: options[:enroll],
-          browser_proof: TouchQue::Guard.silent_on?(silent) ? header.call(TouchQue::Guard::BROWSER_HEADER) : nil,
+          browser_proof: Touchque::Guard.silent_on?(silent) ? header.call(Touchque::Guard::BROWSER_HEADER) : nil,
           silent_sign_in: silent, context: touchque_value(options[:context])
         )
         if result[:approved]
@@ -88,17 +88,17 @@ module TouchQue
     # Verified webhooks in a controller:
     #
     #   class TouchqueWebhooksController < ActionController::API
-    #     include TouchQue::Rails::Webhook
+    #     include Touchque::Rails::Webhook
     #     verify_touchque_webhook
     #
     #     def create
-    #       EndSession.call(touchque_webhook["requestId"]) if touchque_webhook["event"] == TouchQue::Resources::Webhook::EVENT_APPROVAL_REVOKED
+    #       EndSession.call(touchque_webhook["requestId"]) if touchque_webhook["event"] == Touchque::Resources::Webhook::EVENT_APPROVAL_REVOKED
     #       head :ok
     #     end
     #   end
     #
     # A bad signature or an old timestamp answers 401 before your action; a replay of a
-    # delivery already accepted answers 200 without running it again (TouchQue.replay_cache:
+    # delivery already accepted answers 200 without running it again (Touchque.replay_cache:
     # in-process by default; set one over Redis when you run several processes).
     module Webhook
       def self.included(base)
@@ -107,7 +107,7 @@ module TouchQue
       end
 
       module ClassMethods
-        def verify_touchque_webhook(tolerance_seconds: TouchQue::Resources::Webhook::DEFAULT_TOLERANCE_SECONDS, **filter_options)
+        def verify_touchque_webhook(tolerance_seconds: Touchque::Resources::Webhook::DEFAULT_TOLERANCE_SECONDS, **filter_options)
           before_action(**filter_options) { touchque_verify_webhook!(tolerance_seconds) }
         end
       end
@@ -120,11 +120,11 @@ module TouchQue
       private
 
       def touchque_verify_webhook!(tolerance_seconds)
-        @touchque_webhook = TouchQue.client.webhook.verify(request.raw_post, request.headers["x-signature"],
-                                                           tolerance_seconds: tolerance_seconds, replay_cache: TouchQue.replay_cache)
-      rescue TouchQue::WebhookReplayError
+        @touchque_webhook = Touchque.client.webhook.verify(request.raw_post, request.headers["x-signature"],
+                                                           tolerance_seconds: tolerance_seconds, replay_cache: Touchque.replay_cache)
+      rescue Touchque::WebhookReplayError
         render json: { received: true, duplicate: true }, status: :ok
-      rescue TouchQue::WebhookSignatureError
+      rescue Touchque::WebhookSignatureError
         render json: { error: "invalid_signature" }, status: :unauthorized
       end
     end

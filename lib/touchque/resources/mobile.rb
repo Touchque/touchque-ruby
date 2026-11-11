@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   module Resources
-    # TouchQue Mobile SDK, your backend's side: your own iOS/Android app is the approver
-    # of your users (white-label); they never install the TouchQue app.
+    # Touchque Mobile SDK, your backend's side: your own iOS/Android app is the approver
+    # of your users (white-label); they never install the Touchque app.
     #
     # 1. A user signed in to your app turns approvals on: create_enrollment gives a
-    #    one-time token; your app hands it to the SDK (TouchQue.enroll).
+    #    one-time token; your app hands it to the SDK (Touchque.enroll).
     # 2. Ask for approvals as always (login.request, start, the guards).
-    # 3. Without your APNs/FCM keys in update_settings, TouchQue sends you a signed
+    # 3. Without your APNs/FCM keys in update_settings, Touchque sends you a signed
     #    MOBILE_PUSH webhook per request: verify it, then Mobile.push_from_webhook gives
     #    the APNs payload / FCM data to send with your own credentials.
     class Mobile
@@ -68,7 +68,7 @@ module TouchQue
       # the keys given change: ios_app_ids, android_packages, android_certs ({package =>
       # [SHA-256 of its signing certificate]}), attestation (off | optional | required),
       # enroll_ttl_seconds, apns ({keyId:, teamId:, topic:, key: the .p8 text, production:}:
-      # TouchQue then sends the iOS push itself), fcm ({serviceAccount: the JSON}: the
+      # Touchque then sends the iOS push itself), fcm ({serviceAccount: the JSON}: the
       # Android push); nil removes a key. The keys are never shown back.
       def update_settings(**changes)
         unknown = changes.keys.map(&:to_s) - SETTINGS.keys

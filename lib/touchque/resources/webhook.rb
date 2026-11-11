@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   # Storage for webhook jtis already accepted. +check_and_set+ must atomically record
   # the jti for +ttl_seconds+ and return true when it was NOT seen before. Use
   # MemoryReplayCache in one process, or one over Redis (SET key 1 NX EX ttl) or your
@@ -143,7 +143,7 @@ module TouchQue
         # Never put the expected signature in the error: it would be a signing oracle.
         raise WebhookSignatureError, "invalid signature" unless Util.secure_compare(Util.hmac_hex(@secret, canonical), provided)
 
-        # TouchQue always signs a timestamp: a missing or unparseable one fails closed.
+        # Touchque always signs a timestamp: a missing or unparseable one fails closed.
         if tolerance_seconds.positive?
           at = Util.parse_time(payload["timestamp"])
           raise WebhookSignatureError, "timestamp is missing or invalid" if at.nil?

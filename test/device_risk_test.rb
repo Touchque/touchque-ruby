@@ -15,7 +15,7 @@ class DeviceRiskTest < FakeApiTest
       assert r["wouldStepUp"]
     end
     assert_equal "unknown", tq.device_risk.check("nope")["report"]
-    assert_equal "expired", TouchQue::Resources::DeviceRisk.parse_check({ "report" => "expired" })["report"]
+    assert_equal "expired", Touchque::Resources::DeviceRisk.parse_check({ "report" => "expired" })["report"]
   end
 
   def test_check_sends_the_report_and_reads_the_answer
@@ -29,26 +29,26 @@ class DeviceRiskTest < FakeApiTest
   end
 
   def test_bad_input_fails_before_any_request
-    assert_raises(TouchQue::ConfigError) { tq.device_risk.check(device_risk: "r", event: "tracking") }
-    assert_raises(TouchQue::ConfigError) { tq.device_risk.get_event("../users") }
+    assert_raises(Touchque::ConfigError) { tq.device_risk.check(device_risk: "r", event: "tracking") }
+    assert_raises(Touchque::ConfigError) { tq.device_risk.get_event("../users") }
   end
 
   def test_the_answer_fails_toward_asking
-    assert TouchQue::Resources::DeviceRisk.parse_check({})["stepUp"]
-    refute TouchQue::Resources::DeviceRisk.parse_check({ "stepUp" => false })["stepUp"]
-    r = TouchQue::Resources::DeviceRisk.parse_check({ "signals" => [{ "code" => "device_tampered", "text" => "t" }, nil, { "text" => "x" }], "requires" => "passkey" })
+    assert Touchque::Resources::DeviceRisk.parse_check({})["stepUp"]
+    refute Touchque::Resources::DeviceRisk.parse_check({ "stepUp" => false })["stepUp"]
+    r = Touchque::Resources::DeviceRisk.parse_check({ "signals" => [{ "code" => "device_tampered", "text" => "t" }, nil, { "text" => "x" }], "requires" => "passkey" })
     assert_equal [{ "code" => "device_tampered", "text" => "t", "strength" => "number_match" }], r["signals"]
     assert_equal %w[passkey invalid], [r["requires"], r["report"]]
   end
 
   def test_engine_unavailable_comes_through_and_a_normal_answer_has_nil
-    down = TouchQue::Resources::DeviceRisk.parse_check({ "report" => "ok", "signals" => [], "stepUp" => true, "wouldStepUp" => true,
+    down = Touchque::Resources::DeviceRisk.parse_check({ "report" => "ok", "signals" => [], "stepUp" => true, "wouldStepUp" => true,
                                                          "requires" => "number_match", "mode" => "enforce", "engine" => "unavailable" })
     assert_equal ["unavailable", true, "number_match"], [down["engine"], down["stepUp"], down["requires"]]
-    normal = TouchQue::Resources::DeviceRisk.parse_check({ "report" => "ok", "signals" => [], "stepUp" => false, "requires" => "none", "mode" => "shadow" })
+    normal = Touchque::Resources::DeviceRisk.parse_check({ "report" => "ok", "signals" => [], "stepUp" => false, "requires" => "none", "mode" => "shadow" })
     assert_nil normal["engine"]
     refute normal["stepUp"]
-    assert_nil TouchQue::Resources::DeviceRisk.parse_check({ "engine" => 42 })["engine"]
+    assert_nil Touchque::Resources::DeviceRisk.parse_check({ "engine" => 42 })["engine"]
   end
 
   def test_risk_check_carries_device_risk
@@ -57,11 +57,11 @@ class DeviceRiskTest < FakeApiTest
   end
 
   def test_the_address_the_counts_and_a_bot_answer_come_through
-    r = TouchQue::Resources::DeviceRisk.parse_check({ "report" => "ok", "network" => { "type" => "hosting" }, "velocity" => { "identifications1h" => 2 }, "bot" => { "result" => "suspected" } })
+    r = Touchque::Resources::DeviceRisk.parse_check({ "report" => "ok", "network" => { "type" => "hosting" }, "velocity" => { "identifications1h" => 2 }, "bot" => { "result" => "suspected" } })
     assert_equal "hosting", r["network"]["type"]
     assert_equal 2, r["velocity"]["identifications1h"]
     assert_equal "suspected", r["bot"]["result"]
-    assert_nil TouchQue::Resources::DeviceRisk.parse_check({ "network" => "x" })["network"]
+    assert_nil Touchque::Resources::DeviceRisk.parse_check({ "network" => "x" })["network"]
   end
 
   def test_search_events_pages_with_the_opaque_cursor_and_sends_the_filters
@@ -78,7 +78,7 @@ class DeviceRiskTest < FakeApiTest
       break unless cursor
     end
     assert_equal %w[dre_fakeEvent00000000003 dre_fakeEvent00000000002 dre_fakeEvent00000000001], seen
-    assert_raises(TouchQue::ConfigError) { tq.device_risk.search_events(limit: 101) }
-    assert_raises(TouchQue::ConfigError) { tq.device_risk.search_events(page: 2) }
+    assert_raises(Touchque::ConfigError) { tq.device_risk.search_events(limit: 101) }
+    assert_raises(Touchque::ConfigError) { tq.device_risk.search_events(page: 2) }
   end
 end

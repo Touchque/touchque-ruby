@@ -1,16 +1,16 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   DEFAULT_BASE_URL = "https://api.touchque.com"
 
-  # The TouchQue client. Every call is signed with your API secret, so it belongs on
+  # The Touchque client. Every call is signed with your API secret, so it belongs on
   # your server; browser pieces relay through it.
   #
   #   # TQ_API_KEY=tq_...  TQ_API_SECRET=...
-  #   tq = TouchQue::Client.new
+  #   tq = Touchque::Client.new
   #   step = tq.start("SEND_MONEY", "jane@acme.com", details: { "Amount" => "250 EUR" })
   #
-  # Thread-safe: create one and reuse it (in Rails, TouchQue.client).
+  # Thread-safe: create one and reuse it (in Rails, Touchque.client).
   class Client
     attr_reader :auth, :login, :webauthn, :webhook, :offline, :action_types, :actions, :risk, :recovery,
                 :assist, :agents, :identity, :mobile, :qr_pairings, :device_risk, :safe_guard
@@ -53,8 +53,8 @@ module TouchQue
 
     # Starts an approval and returns at once: show the step in your UI. "waiting" with
     # "number": show the number, the user picks it on the phone. "enroll": show
-    # step["enroll"]["qrCodeDataUrl"] so the user links the TouchQue app first.
-    # +browser_proof+ (silent sign-ins): the X-TouchQue-Browser header, passed through.
+    # step["enroll"]["qrCodeDataUrl"] so the user links the Touchque app first.
+    # +browser_proof+ (silent sign-ins): the X-Touchque-Browser header, passed through.
     def start(action, user, details: nil, reference_id: nil, ip: nil, user_agent: nil, browser_proof: nil, context: nil)
       Steps.start(self, action, user, details: details, reference_id: reference_id, ip: ip, user_agent: user_agent,
                                       browser_proof: browser_proof, context: context)

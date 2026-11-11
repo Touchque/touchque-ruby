@@ -2,8 +2,8 @@
 
 require "openssl"
 
-module TouchQue
-  # Key helpers for AI agents (TouchQue::Agent): new key pairs and RFC 7638 thumbprints.
+module Touchque
+  # Key helpers for AI agents (Touchque::Agent): new key pairs and RFC 7638 thumbprints.
   module AgentKeys
     # DER prefixes of the key formats OpenSSL reads (the key bytes follow them).
     ED25519_PKCS8 = ["302e020100300506032b657004220420"].pack("H*")
@@ -171,7 +171,7 @@ module TouchQue
     end
   end
 
-  # JWS signature checks for the algorithms TouchQue uses.
+  # JWS signature checks for the algorithms Touchque uses.
   module JWS
     module_function
 

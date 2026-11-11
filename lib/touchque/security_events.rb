@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   # A refused Security Event Token (Shared Signals). +error+ is the RFC 8935 error
   # to answer with (HTTP 400 {"err": error}): invalid_request, invalid_key,
   # invalid_issuer or invalid_audience; temporarily_unavailable when the issuer's
@@ -18,27 +18,27 @@ module TouchQue
   # (SETs, RFC 8417) an identity provider sends when something happens to a
   # person's account after sign-in: CAEP session-revoked, credential-change,
   # device-compliance-change; RISC account-disabled, credential-compromise.
-  # TouchQue SSO sends them for an organization's members to the receivers its
+  # Touchque SSO sends them for an organization's members to the receivers its
   # admin adds (Organization > Continuous access). Your app ends the person's
   # sessions or asks them to sign in again.
   #
   # Push delivery (RFC 8935), the SET is the request body (application/secevent+jwt):
   #
-  #   VERIFIER = TouchQue::SecurityEventVerifier.new(issuer: "https://sso.touchque.com", audience: "https://app.example.com")
+  #   VERIFIER = Touchque::SecurityEventVerifier.new(issuer: "https://sso.touchque.com", audience: "https://app.example.com")
   #   post "/ssf" do
   #     event = VERIFIER.verify(request.body.read)
   #     end_sessions_of(event["subject"]["email"]) if event["name"] == "session-revoked"
   #     status 202
-  #   rescue TouchQue::SecurityEventError => e
+  #   rescue Touchque::SecurityEventError => e
   #     halt 400, { err: e.error, description: e.message }.to_json
   #   end
   #
-  # Poll delivery (RFC 8936): TouchQue::SecurityEvents.poll(url:, token:, ack: [...]).
+  # Poll delivery (RFC 8936): Touchque::SecurityEvents.poll(url:, token:, ack: [...]).
   #
   # A SET does not expire: it says what happened. Keep the jtis you handled and
   # skip a repeat.
   module SecurityEvents
-    # The event types TouchQue sends, by their short name.
+    # The event types Touchque sends, by their short name.
     TYPES = {
       "session-revoked" => "https://schemas.openid.net/secevent/caep/event-type/session-revoked",
       "credential-change" => "https://schemas.openid.net/secevent/caep/event-type/credential-change",
@@ -90,7 +90,7 @@ module TouchQue
       set_keys(jwks) if jwks
     end
 
-    # The SET, checked: { "jti", "issuer", "audience" (list), "issued_at", "txn" (TouchQue's case code),
+    # The SET, checked: { "jti", "issuer", "audience" (list), "issued_at", "txn" (Touchque's case code),
     # "subject" (sub_id), "type" (URI), "name" (short name, or nil), "claims" (the event's own) },
     # or SecurityEventError.
     def verify(token)

@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   module Resources
-    # TouchQue Login Management API (tq.identity): your customers' accounts, roles,
+    # Touchque Login Management API (tq.identity): your customers' accounts, roles,
     # business-customer organizations, apps, APIs, connections and the tenant itself,
     # from your server with your workspace key. Bodies and queries are Hashes with the
     # API's camelCase fields (symbol or string keys); answers are the API's JSON.
@@ -31,7 +31,7 @@ module TouchQue
         @http.get("/identity/tenant")
       end
 
-      # Turns TouchQue Login on (slug, displayName) or changes its settings.
+      # Turns Touchque Login on (slug, displayName) or changes its settings.
       def update_tenant(body)
         @http.put("/identity/tenant", body)
       end
@@ -41,7 +41,7 @@ module TouchQue
       end
 
       # The phone app the hosted pages tell customers to approve on ("Approve on the Acme app").
-      # nil: your brand name when the Mobile SDK is set up, else TouchQue (approverApp in the tenant shows which).
+      # nil: your brand name when the Mobile SDK is set up, else Touchque (approverApp in the tenant shows which).
       def set_approver_app_name(name)
         @http.put("/identity/tenant", { "branding" => { "approverAppName" => name } })
       end
@@ -89,7 +89,7 @@ module TouchQue
         @http.put("/identity/delivery/#{Util.seg(channel)}", provider)
       end
 
-      # Back to TouchQue's transport.
+      # Back to Touchque's transport.
       def remove_delivery(channel)
         @http.delete("/identity/delivery/#{Util.seg(channel)}")
       end
@@ -100,7 +100,7 @@ module TouchQue
       end
     end
 
-    # List, get, create, update and delete for one kind of TouchQue Login object.
+    # List, get, create, update and delete for one kind of Touchque Login object.
     class IdentityCrud
       def initialize(http, base, list_key)
         @http = http
@@ -273,7 +273,7 @@ module TouchQue
         @http.delete("#{u(user_id)}/sessions")
       end
 
-      # Removes passkeys, unlinks the TouchQue app, turns email codes off, signs out everywhere.
+      # Removes passkeys, unlinks the Touchque app, turns email codes off, signs out everywhere.
       def reset_mfa(user_id)
         @http.delete("#{u(user_id)}/mfa")
       end

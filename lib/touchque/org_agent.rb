@@ -1,16 +1,16 @@
 # frozen_string_literal: true
 
-module TouchQue
-  # An organization's AI agent on TouchQue SSO (Organization → AI agents in the
+module Touchque
+  # An organization's AI agent on Touchque SSO (Organization → AI agents in the
   # dashboard): it gets 5-minute tokens for one of the organization's apps, proving who
   # it is with its own key (private_key_jwt) or with the token its platform already
   # gives it (GitHub Actions, GitLab, Google Cloud, Azure, Kubernetes), and binds each
   # token to a DPoP key made when it starts.
   #
-  #   agent = TouchQue::OrgAgent.new(agent_id: "oagt_...", private_key: ENV["TQ_ORG_AGENT_KEY"])
+  #   agent = Touchque::OrgAgent.new(agent_id: "oagt_...", private_key: ENV["TQ_ORG_AGENT_KEY"])
   #   headers = agent.authorization("GET", "https://payments.acme.com/invoices", resource: "tqapp_...")
   #   # A GitHub Actions job (permissions: id-token: write), with no key to store:
-  #   agent = TouchQue::OrgAgent.new(agent_id: "oagt_...", assertion: TouchQue::OrgAgent.github_actions_token("touchque"))
+  #   agent = Touchque::OrgAgent.new(agent_id: "oagt_...", assertion: Touchque::OrgAgent.github_actions_token("touchque"))
   class OrgAgent
     attr_reader :agent_id
 
@@ -52,7 +52,7 @@ module TouchQue
         private_key ||= ENV.fetch("TQ_ORG_AGENT_KEY", nil)
         raise ConfigError, "Pass private_key: (or set TQ_ORG_AGENT_KEY), or assertion: with the platform's token" if private_key.to_s.empty?
 
-        @key = SigningKey.load(private_key, "TouchQue::OrgAgent")
+        @key = SigningKey.load(private_key, "Touchque::OrgAgent")
         jwk = private_key.is_a?(Hash) ? Util.stringify(private_key) : (private_key.to_s.lstrip.start_with?("{") ? Util.parse_json(private_key) : nil)
         @kid = kid || (jwk.is_a?(Hash) && jwk["kid"]) || AgentKeys.thumbprint(@key.public_jwk)
       end
@@ -101,7 +101,7 @@ module TouchQue
     end
 
     # The token vault: a member's own access token at another service (Google, Microsoft
-    # 365, GitHub...) they connected on TouchQue, for a connection that names this agent.
+    # 365, GitHub...) they connected on Touchque, for a connection that names this agent.
     # APIError invalid_grant: the member has not connected it (or disconnected, or left).
     def get_connection_token(subject_token, connection, scope: nil)
       data = post("/sso/token", {
@@ -116,7 +116,7 @@ module TouchQue
 
     # Asks to open a shared account (its key, from Organization → AI agents → Access) for
     # a member: {"askId", "openUrl", "status", "expiresIn"}. The member opens openUrl in
-    # the browser where their TouchQue extension is paired; the agent never sees the
+    # the browser where their Touchque extension is paired; the agent never sees the
     # password. +message+ (at most 64 characters) is shown marked unverified.
     def ask_to_open_shared_account(account, login_hint, message = nil)
       data = post("/sso/agents/shared-accounts/asks", { "account" => account, "login_hint" => login_hint, "binding_message" => message }, dpop: false)
@@ -213,21 +213,21 @@ module TouchQue
     end
   end
 
-  # For an MCP server whose authorization server is TouchQue SSO (Organization → MCP
+  # For an MCP server whose authorization server is Touchque SSO (Organization → MCP
   # servers in the dashboard; issuer https://sso.touchque.com/mcp):
   # protected_resource_metadata is its RFC 9728 document (serve it at metadata_paths);
-  # verify checks a request's token (signed by TouchQue, this issuer, audience = this
+  # verify checks a request's token (signed by Touchque, this issuer, audience = this
   # server, not expired, and for a DPoP-bound token a fresh proof); require_tool refuses
   # with 403 insufficient_scope naming the scope a tool needs.
   #
-  #   auth = TouchQue::McpAuth.new(issuer: "https://sso.touchque.com/mcp", resource: "https://mcp.acme.com/mcp",
+  #   auth = Touchque::McpAuth.new(issuer: "https://sso.touchque.com/mcp", resource: "https://mcp.acme.com/mcp",
   #                                tools: { "search_tickets" => "tickets:read" })
   #   claims = auth.verify(request.request_method, request.url, request.headers)
   #   auth.require_tool(claims, tool_name)
   class McpAuth
     def initialize(issuer:, resource:, tools: {}, resource_name: nil, clock_skew: 60, fetch: nil)
       if issuer.to_s.empty? || resource.to_s.empty?
-        raise ConfigError, "McpAuth needs issuer (TouchQue SSO's MCP issuer) and resource (this server's URL)"
+        raise ConfigError, "McpAuth needs issuer (Touchque SSO's MCP issuer) and resource (this server's URL)"
       end
 
       @issuer = issuer.chomp("/")
@@ -270,7 +270,7 @@ module TouchQue
       get = header_getter(headers)
       scheme, token = get.call("authorization").to_s.strip.split(" ", 2)
       token = token.to_s.strip
-      raise refusal(401, "missing_token", "A TouchQue access token is required") unless %w[bearer dpop].include?(scheme.to_s.downcase) && token.count(".") == 2
+      raise refusal(401, "missing_token", "A Touchque access token is required") unless %w[bearer dpop].include?(scheme.to_s.downcase) && token.count(".") == 2
 
       claims = claims_of(token)
       jkt = claims.dig("cnf", "jkt")
@@ -322,7 +322,7 @@ module TouchQue
       raise refusal(401, "invalid_token", "The token is malformed") unless parts
 
       head, claims, input, sig = parts
-      raise refusal(401, "invalid_token", "Not a TouchQue access token") unless head["typ"] == "at+jwt" && %w[RS256 ES256].include?(head["alg"])
+      raise refusal(401, "invalid_token", "Not a Touchque access token") unless head["typ"] == "at+jwt" && %w[RS256 ES256].include?(head["alg"])
 
       key = begin
         key_for(head["kid"].to_s)

@@ -2,8 +2,8 @@
 
 require "test_helper"
 
-# TouchQue Actions and AI agents: management calls send what the shared vectors say, and
-# TouchQue::Agent / OrgAgent sign in with their own keys against the fake API, which
+# Touchque Actions and AI agents: management calls send what the shared vectors say, and
+# Touchque::Agent / OrgAgent sign in with their own keys against the fake API, which
 # checks the private_key_jwt assertions and DPoP proofs like the real API.
 class AgentsTest < FakeApiTest
   def vectors
@@ -11,7 +11,7 @@ class AgentsTest < FakeApiTest
   end
 
   def agent(id, key, kid: nil)
-    TouchQue::Agent.new(agent_id: id, private_key: key, kid: kid, base_url: api.base_url)
+    Touchque::Agent.new(agent_id: id, private_key: key, kid: kid, base_url: api.base_url)
   end
 
   def create(name, public_key, types = ["LOGIN"])
@@ -66,24 +66,24 @@ class AgentsTest < FakeApiTest
     api.approve_version("silent-office", 1)
     assert_equal 1, tq.actions.get("silent-office").dig("action", "activeVersion")
     api.reset
-    assert_raises(TouchQue::ConfigError) { tq.actions.deploy("Bad Slug", trigger: "login.request", code: "x") }
-    assert_raises(TouchQue::ConfigError) { tq.actions.deploy("no-code", trigger: "login.request") }
-    assert_raises(TouchQue::ConfigError) { tq.actions.secrets.set("lowercase", "v") }
-    assert_raises(TouchQue::ConfigError) { tq.actions.render_template("Bad-Id", "login.request") }
+    assert_raises(Touchque::ConfigError) { tq.actions.deploy("Bad Slug", trigger: "login.request", code: "x") }
+    assert_raises(Touchque::ConfigError) { tq.actions.deploy("no-code", trigger: "login.request") }
+    assert_raises(Touchque::ConfigError) { tq.actions.secrets.set("lowercase", "v") }
+    assert_raises(Touchque::ConfigError) { tq.actions.render_template("Bad-Id", "login.request") }
     assert_empty api.calls
   end
 
   def test_generate_keys
-    ec = TouchQue::AgentKeys.generate
-    assert_equal ["ES256", TouchQue::AgentKeys.thumbprint(ec["publicJwk"])], [ec["publicJwk"]["alg"], ec["publicJwk"]["kid"]]
+    ec = Touchque::AgentKeys.generate
+    assert_equal ["ES256", Touchque::AgentKeys.thumbprint(ec["publicJwk"])], [ec["publicJwk"]["alg"], ec["publicJwk"]["kid"]]
     refute ec["publicJwk"].key?("d")
-    assert_equal "Ed25519", TouchQue::AgentKeys.generate("EdDSA")["publicJwk"]["crv"]
-    assert_raises(TouchQue::ConfigError) { TouchQue::AgentKeys.generate("RS256") }
+    assert_equal "Ed25519", Touchque::AgentKeys.generate("EdDSA")["publicJwk"]["crv"]
+    assert_raises(Touchque::ConfigError) { Touchque::AgentKeys.generate("RS256") }
   end
 
   def test_management_call_vectors
-    k1 = TouchQue::AgentKeys.generate
-    k2 = TouchQue::AgentKeys.generate("EdDSA")
+    k1 = Touchque::AgentKeys.generate
+    k2 = Touchque::AgentKeys.generate("EdDSA")
     id = ""
     ag = tq.agents
     vectors["calls"].each do |v|
@@ -109,12 +109,12 @@ class AgentsTest < FakeApiTest
       end
       call = api.last_call
       want = JSON.parse(JSON.generate(v).gsub('"{publicKey}"', JSON.generate(k1["publicJwk"])).gsub('"{publicKey2}"', JSON.generate(k2["publicJwk"]))
-                                         .gsub("{id}", id).gsub("{kid}", TouchQue::Util.seg(k2["publicJwk"]["kid"])))
+                                         .gsub("{id}", id).gsub("{kid}", Touchque::Util.seg(k2["publicJwk"]["kid"])))
       assert_equal [want["method"], want["path"]], [call["method"], call["path"]], v["name"]
       assert_equal "#{want["path"]}?#{want["query"]}", call["url"] if want["query"]
       assert_equal want["body"], call["body"], v["name"] if want["body"]
     end
-    assert_raises(TouchQue::ConfigError) { create("x", k1["privateJwk"]) }
+    assert_raises(Touchque::ConfigError) { create("x", k1["privateJwk"]) }
   end
 
   def test_workspace_policy_under_both_names
@@ -127,7 +127,7 @@ class AgentsTest < FakeApiTest
 
   def test_agent_signs_in_with_its_own_key
     %w[ES256 EdDSA].each do |alg|
-      keys = TouchQue::AgentKeys.generate(alg)
+      keys = Touchque::AgentKeys.generate(alg)
       created = create("agent #{alg}", keys["publicJwk"])
       [keys["privateJwk"], JSON.generate(keys["privateJwk"])].each do |key|
         me = agent(created["id"], key).me
@@ -136,42 +136,42 @@ class AgentsTest < FakeApiTest
     end
     ec = OpenSSL::PKey::EC.generate("prime256v1")
     point = ec.public_key.to_octet_string(:uncompressed)
-    pub = { "kty" => "EC", "crv" => "P-256", "x" => TouchQue::Util.b64url(point[1, 32]), "y" => TouchQue::Util.b64url(point[33, 32]) }
+    pub = { "kty" => "EC", "crv" => "P-256", "x" => Touchque::Util.b64url(point[1, 32]), "y" => Touchque::Util.b64url(point[33, 32]) }
     pem = create("pem", pub)
     assert_equal pem["id"], agent(pem["id"], ec.to_pem).me["agent"]["id"]
   end
 
   def test_token_is_reused_and_refusals_carry_the_reason
-    keys = TouchQue::AgentKeys.generate
+    keys = Touchque::AgentKeys.generate
     created = create("refused", keys["publicJwk"])
     bot = agent(created["id"], keys["privateJwk"])
     bot.me
     bot.me
     assert_equal 1, paths.count("/agents/token")
     tq.agents.suspend(created["id"], reason: "looping")
-    e = assert_raises(TouchQue::APIError) { bot.me }
+    e = assert_raises(Touchque::APIError) { bot.me }
     assert_equal [403, "agent_blocked", "suspended"], [e.status, e.code, e.reason]
-    e = assert_raises(TouchQue::APIError) { agent(created["id"], keys["privateJwk"]).me }
+    e = assert_raises(Touchque::APIError) { agent(created["id"], keys["privateJwk"]).me }
     assert_equal %w[unauthorized_client suspended], [e.code, e.reason]
     tq.agents.resume(created["id"])
-    e = assert_raises(TouchQue::APIError) { agent(created["id"], TouchQue::AgentKeys.generate["privateJwk"], kid: keys["publicJwk"]["kid"]).me }
+    e = assert_raises(Touchque::APIError) { agent(created["id"], Touchque::AgentKeys.generate["privateJwk"], kid: keys["publicJwk"]["kid"]).me }
     assert_equal [401, "invalid_client"], [e.status, e.code]
     tq.agents.set_kill_switch(true, reason: "incident")
-    assert_equal "workspace_paused", assert_raises(TouchQue::APIError) { bot.me }.reason
+    assert_equal "workspace_paused", assert_raises(Touchque::APIError) { bot.me }.reason
     tq.agents.set_kill_switch(false)
     assert_equal created["id"], bot.me["agent"]["id"]
   end
 
   def test_configuration_errors
-    key = TouchQue::AgentKeys.generate["privateJwk"]
-    assert_raises(TouchQue::ConfigError) { agent("nope", key) }
-    assert_raises(TouchQue::ConfigError) { agent("agt_abcdefghijkmnpqrstuv", "not a key") }
-    assert_raises(TouchQue::ConfigError) { TouchQue::Agent.new(agent_id: "agt_abcdefghijkmnpqrstuv", private_key: key, base_url: "http://api.example.com") }
-    assert_raises(TouchQue::ConfigError) { agent("agt_abcdefghijkmnpqrstuv", TouchQue::AgentKeys.generate["publicJwk"]) }
+    key = Touchque::AgentKeys.generate["privateJwk"]
+    assert_raises(Touchque::ConfigError) { agent("nope", key) }
+    assert_raises(Touchque::ConfigError) { agent("agt_abcdefghijkmnpqrstuv", "not a key") }
+    assert_raises(Touchque::ConfigError) { Touchque::Agent.new(agent_id: "agt_abcdefghijkmnpqrstuv", private_key: key, base_url: "http://api.example.com") }
+    assert_raises(Touchque::ConfigError) { agent("agt_abcdefghijkmnpqrstuv", Touchque::AgentKeys.generate["publicJwk"]) }
   end
 
   def test_token_vault
-    keys = TouchQue::AgentKeys.generate
+    keys = Touchque::AgentKeys.generate
     created = create("calendar", keys["publicJwk"])
     bot = agent(created["id"], keys["privateJwk"])
     conn = tq.agents.vault.put_connection("google", provider: "google", client_id: "acme.apps.googleusercontent.com", client_secret: "g-secret", agent_ids: [created["id"]])
@@ -180,7 +180,7 @@ class AgentsTest < FakeApiTest
     refute_includes JSON.generate(tq.agents.vault.list_accounts("jane@example.com")), "ya29"
     assert_equal({ "access_token" => "ya29.jane", "token_type" => "Bearer", "expires_in" => 3599, "scope" => "calendar.readonly", "connection" => "google" },
                  bot.get_connection_token("jane@example.com", "google"))
-    assert_equal "not_connected", assert_raises(TouchQue::APIError) { bot.get_connection_token("john@example.com", "google") }.code
+    assert_equal "not_connected", assert_raises(Touchque::APIError) { bot.get_connection_token("john@example.com", "google") }.code
     tq.agents.vault.remove_account("google", "jane@example.com")
     assert_equal({ "removed" => true, "tokensDeleted" => 0 }, tq.agents.vault.remove_connection("google"))
   end
@@ -189,7 +189,7 @@ class AgentsTest < FakeApiTest
     user = "agent-approvals@example.com"
     api.link(user)
     tq.action_types.define("PAY_INVOICE", critical: false)
-    keys = TouchQue::AgentKeys.generate
+    keys = Touchque::AgentKeys.generate
     created = create("Invoice bot", keys["publicJwk"], ["PAY_INVOICE"])
     bot = agent(created["id"], keys["privateJwk"])
     payment = vectors["approvalToken"]["claims"]["authorization_details"][0]
@@ -208,24 +208,24 @@ class AgentsTest < FakeApiTest
     assert_equal "touchque:workspace:fake-workspace", tq.agents.approval_audience
     claims = tq.agents.verify_approval_token(token, user: user, authorization_details: payment)
     assert_equal created["id"], claims["act"]["sub"]
-    other = assert_raises(TouchQue::ApprovalMismatchError) { tq.agents.verify_approval_token(token, audience: "touchque:workspace:other") }
+    other = assert_raises(Touchque::ApprovalMismatchError) { tq.agents.verify_approval_token(token, audience: "touchque:workspace:other") }
     assert_match(/another workspace/, other.message)
-    mismatch = assert_raises(TouchQue::ApprovalMismatchError) do
+    mismatch = assert_raises(Touchque::ApprovalMismatchError) do
       tq.agents.redeem_approval(token, authorization_details: payment.merge("instructedAmount" => { "currency" => "TRY", "amount" => "5000.00" }))
     end
     assert_match(/differ/, mismatch.message)
     approval = tq.agents.redeem_approval(token, user: user, type: "PAY_INVOICE",
                                                 authorization_details: { type: "payment_initiation", instructedAmount: { currency: "try", amount: "500" } })
     assert_equal ask["approvalId"], approval["id"]
-    assert_equal "already_redeemed", assert_raises(TouchQue::APIError) { tq.agents.redeem_approval(token) }.code
+    assert_equal "already_redeemed", assert_raises(Touchque::APIError) { tq.agents.redeem_approval(token) }.code
     ask2 = bot.request_approval(user, "PAY_INVOICE", [payment], presence: "background")
     assert_nil ask2["challengeCode"]
     api.reject(ask2["approvalId"])
-    assert_equal "rejected", assert_raises(TouchQue::ApprovalError) { bot.wait_for_approval(ask2["approvalId"], timeout: 10, interval: 0.5) }.status
+    assert_equal "rejected", assert_raises(Touchque::ApprovalError) { bot.wait_for_approval(ask2["approvalId"], timeout: 10, interval: 0.5) }.status
   end
 
   def test_blocks_and_mandates
-    a = create("blocked", TouchQue::AgentKeys.generate["publicJwk"])
+    a = create("blocked", Touchque::AgentKeys.generate["publicJwk"])
     api.post("/__test/agent-block", { agentId: a["id"], user: "jane@example.com" })
     assert_equal "not_me", tq.agents.list_blocks(a["id"])[0]["reason"]
     tq.agents.lift_block(a["id"], "jane@example.com")
@@ -235,7 +235,7 @@ class AgentsTest < FakeApiTest
     user = "agent-mandates@example.com"
     api.link(user)
     tq.action_types.define("PAY_INVOICE", critical: false)
-    keys = TouchQue::AgentKeys.generate
+    keys = Touchque::AgentKeys.generate
     created = create("Mandate bot", keys["publicJwk"], ["PAY_INVOICE"])
     bot = agent(created["id"], keys["privateJwk"])
     payment = vectors["approvalToken"]["claims"]["authorization_details"][0]
@@ -247,6 +247,6 @@ class AgentsTest < FakeApiTest
     assert_equal ["approved", 1], [used["status"], used["mandate"]["usedCount"]]
     assert_equal mandate["mandateId"], tq.agents.list_mandates(created["id"], user: user)[0]["mandateId"]
     assert_equal "revoked", tq.agents.revoke_mandate(created["id"], mandate["mandateId"])["status"]
-    assert_equal "mandate_revoked", assert_raises(TouchQue::APIError) { bot.request_approval(user, "PAY_INVOICE", [payment], mandate_id: mandate["mandateId"]) }.code
+    assert_equal "mandate_revoked", assert_raises(Touchque::APIError) { bot.request_approval(user, "PAY_INVOICE", [payment], mandate_id: mandate["mandateId"]) }.code
   end
 end

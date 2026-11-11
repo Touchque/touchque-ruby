@@ -23,7 +23,7 @@ class ResourcesTest < FakeApiTest
   end
 
   def guard(proof, silent, action: "LOGIN", token: nil, client: tq)
-    TouchQue::Guard.run(client, USER, action, ip: "203.0.113.7", user_agent: "UA", token: token, browser_proof: proof, silent_sign_in: silent)
+    Touchque::Guard.run(client, USER, action, ip: "203.0.113.7", user_agent: "UA", token: token, browser_proof: proof, silent_sign_in: silent)
   end
 
   def test_risk_check_and_known_browsers
@@ -32,7 +32,7 @@ class ResourcesTest < FakeApiTest
     res = tq.risk.check(USER, type: "LOGIN", client_ip: "203.0.113.7", user_agent: "UA", browser_proof: @proof, max_age_seconds: 3600)
     assert_equal [{ "code" => "new_browser", "text" => "This browser has not been approved on the phone for this account" }], res["reasons"]
     assert_equal({ "externalUsername" => USER, "type" => "LOGIN", "clientIp" => "203.0.113.7", "userAgent" => "UA", "browserProof" => @proof, "maxAgeSeconds" => 3600 }, api.last_check)
-    assert_raises(TouchQue::ConfigError) { tq.risk.check(USER, max_age_seconds: -1) }
+    assert_raises(Touchque::ConfigError) { tq.risk.check(USER, max_age_seconds: -1) }
     first = tq.login.request(USER, browser_proof: @proof)
     assert_equal({ "browsers" => [] }, tq.risk.browsers(USER))
     api.approve(first["requestId"])
@@ -73,15 +73,15 @@ class ResourcesTest < FakeApiTest
     refute_includes paths, "/risk/check"
     guard(@proof, { max_age_seconds: 0 })
     assert_equal 0, api.last_check["maxAgeSeconds"]
-    assert_raises(ArgumentError) { TouchQue::Guard.assert_silent_sign_in!({ max_age_seconds: -1 }, "x") }
-    assert_raises(ArgumentError) { TouchQue::Guard.assert_silent_sign_in!("yes", "x") }
+    assert_raises(ArgumentError) { Touchque::Guard.assert_silent_sign_in!({ max_age_seconds: -1 }, "x") }
+    assert_raises(ArgumentError) { Touchque::Guard.assert_silent_sign_in!("yes", "x") }
   end
 
   def test_never_locked_out
     %w[ada@acme.com bo@acme.com cy@acme.com].each { |u| api.link(u) }
     out = tq.recovery.set_vouchers("ada@acme.com", %w[bo@acme.com zed@acme.com])
     assert_equal [{ "externalUsername" => "bo@acme.com", "eligible" => true }, { "externalUsername" => "zed@acme.com", "eligible" => false, "reason" => "no_phone" }], out["vouchers"]
-    e = assert_raises(TouchQue::APIError) { tq.recovery.start("cy@acme.com") }
+    e = assert_raises(Touchque::APIError) { tq.recovery.start("cy@acme.com") }
     assert_equal [409, "not_enough_vouchers"], [e.status, e.code]
     tq.recovery.set_vouchers("ada@acme.com", %w[bo@acme.com cy@acme.com])
     r = tq.recovery.start("ada@acme.com", client_ip: "203.0.113.7", display_name: "Ada", cool_off_minutes: 90)
@@ -91,15 +91,15 @@ class ResourcesTest < FakeApiTest
     api.recovery("VOUCHING")
     now = tq.recovery.status(r["recoveryId"])
     assert_equal %w[11 12], now["vouchers"].map { |v| v["code"] }
-    assert TouchQue::Resources::Recovery.open?(now)
+    assert Touchque::Resources::Recovery.open?(now)
     assert_equal [r["recoveryId"]], tq.recovery.list(open: true).map { |x| x["recoveryId"] }
     vetoed = tq.recovery.veto(r["recoveryId"], by: "admin@acme.com")
     assert_equal %w[VETOED admin@acme.com], [vetoed["status"], vetoed["endedBy"]]
     assert_empty tq.recovery.list(open: true)
     api.reset
-    assert_raises(TouchQue::ConfigError) { tq.recovery.start("") }
-    assert_raises(TouchQue::ConfigError) { tq.recovery.start("a@b.com", required: "3") }
-    assert_raises(TouchQue::ConfigError) { tq.recovery.list }
+    assert_raises(Touchque::ConfigError) { tq.recovery.start("") }
+    assert_raises(Touchque::ConfigError) { tq.recovery.start("a@b.com", required: "3") }
+    assert_raises(Touchque::ConfigError) { tq.recovery.list }
     assert_empty api.calls
   end
 
@@ -110,9 +110,9 @@ class ResourcesTest < FakeApiTest
     check = tq.assist.verify(s["id"], "reset_2fa", action_text: "reset your two-step verification")
     assert_match(/\A\d{2}\z/, check["challengeCode"])
     api.post("/__test/assist", { requestId: check["requestId"], action: "approve" })
-    assert TouchQue::Resources::Assist.check_passed?(tq.assist.get(s["id"]), check["requestId"])
-    assert_equal 428, assert_raises(TouchQue::APIError) { tq.assist.spend(s["id"], check["requestId"], "reset_password") }.status
-    refute TouchQue::Resources::Assist.check_passed?(tq.assist.spend(s["id"], check["requestId"], "reset_2fa"), check["requestId"])
+    assert Touchque::Resources::Assist.check_passed?(tq.assist.get(s["id"]), check["requestId"])
+    assert_equal 428, assert_raises(Touchque::APIError) { tq.assist.spend(s["id"], check["requestId"], "reset_password") }.status
+    refute Touchque::Resources::Assist.check_passed?(tq.assist.spend(s["id"], check["requestId"], "reset_2fa"), check["requestId"])
     assert_equal s["id"], tq.assist.list(external_username: "ayse@acme.com")[0]["id"]
     not_me = tq.assist.verify(s["id"], "activation_link")
     api.post("/__test/assist", { requestId: not_me["requestId"], action: "not_me" })
@@ -122,20 +122,20 @@ class ResourcesTest < FakeApiTest
     out = tq.assist.unfreeze(s["id"], unlock["requestId"])
     assert_equal [true, false], [out["unfrozen"], out["session"]["frozen"]]
     assert_equal "ENDED", tq.assist.end(s["id"])["status"]
-    assert_equal "assist_not_open", assert_raises(TouchQue::APIError) { tq.assist.verify(s["id"], "unlock") }.code
+    assert_equal "assist_not_open", assert_raises(Touchque::APIError) { tq.assist.verify(s["id"], "unlock") }.code
     tq.auth.generate_secret("can@acme.com")
     no_phone = tq.assist.open("can@acme.com", agent: { name: "Deniz Kaya" }, notify: false)
-    e = assert_raises(TouchQue::APIError) { tq.assist.verify(no_phone["id"], "new_phone") }
+    e = assert_raises(Touchque::APIError) { tq.assist.verify(no_phone["id"], "new_phone") }
     assert_equal %w[no_phone never_locked_out], [e.code, e.route]
-    assert_raises(TouchQue::ConfigError) { tq.assist.open("a@b.com", agent: {}) }
-    assert_raises(TouchQue::ConfigError) { tq.assist.list }
+    assert_raises(Touchque::ConfigError) { tq.assist.open("a@b.com", agent: {}) }
+    assert_raises(Touchque::ConfigError) { tq.assist.list }
   end
 
   def test_mobile_sdk_server_side
     first = tq.mobile.create_enrollment("ada@shop.example")
     assert_match(/\Atqe_[A-Za-z0-9_-]{43}\z/, first["enrollmentToken"])
     device = api.post("/__test/mobile-enroll", { enrollmentToken: first["enrollmentToken"], platform: "android" })
-    assert_equal "already_enrolled", assert_raises(TouchQue::APIError) { tq.mobile.create_enrollment("ada@shop.example") }.code
+    assert_equal "already_enrolled", assert_raises(Touchque::APIError) { tq.mobile.create_enrollment("ada@shop.example") }.code
     second = tq.mobile.create_enrollment("ada@shop.example", replace: true, ttl_seconds: 300)
     assert_equal device["deviceId"], second["replacesDeviceId"]
     api.post("/__test/mobile-enroll", { enrollmentToken: second["enrollmentToken"] })
@@ -151,18 +151,18 @@ class ResourcesTest < FakeApiTest
                                   fcm: { serviceAccount: { project_id: "shop", client_email: "push@shop.iam.gserviceaccount.com", private_key: "x" } })
     assert_equal ["touchque", { "projectId" => "shop", "clientEmail" => "push@shop.iam.gserviceaccount.com" }], [s["push"]["ios"], s["push"]["fcm"]]
     assert_equal "webhook", tq.mobile.update_settings(apns: nil)["push"]["ios"]
-    assert_raises(TouchQue::ConfigError) { tq.mobile.update_settings(nope: 1) }
+    assert_raises(Touchque::ConfigError) { tq.mobile.update_settings(nope: 1) }
 
     event = { "event" => "MOBILE_PUSH", "externalUsername" => "ada@shop.example", "deviceId" => "d1", "platform" => "ios", "pushToken" => "apns-token",
               "kind" => "approval", "requestId" => "r1", "expiresAt" => "2026-10-26T10:00:30.000Z",
               "alert" => { "title" => "Change delivery address", "body" => "Demo Shop is waiting for your approval." },
               "data" => { "touchque" => '{"v":1,"k":"approval","did":"d1","rid":"r1"}' } }
-    push = TouchQue::Resources::Mobile.push_from_webhook(event)
+    push = Touchque::Resources::Mobile.push_from_webhook(event)
     assert_equal({ "aps" => { "sound" => "default", "interruption-level" => "time-sensitive", "alert" => event["alert"] }, "touchque" => event["data"]["touchque"] }, push["apns"])
     assert_equal({ "touchque" => event["data"]["touchque"] }, push["fcmData"])
-    assert_nil TouchQue::Resources::Mobile.push_from_webhook({ "event" => "DEVICE_LINKED" })
-    assert TouchQue::Resources::Mobile.push_expired?(push, Time.utc(2026, 10, 26, 10, 1))
-    refute TouchQue::Resources::Mobile.push_expired?(push, Time.utc(2026, 10, 26, 10, 0))
+    assert_nil Touchque::Resources::Mobile.push_from_webhook({ "event" => "DEVICE_LINKED" })
+    assert Touchque::Resources::Mobile.push_expired?(push, Time.utc(2026, 10, 26, 10, 1))
+    refute Touchque::Resources::Mobile.push_expired?(push, Time.utc(2026, 10, 26, 10, 0))
   end
 
   def test_management_api_calls
@@ -208,7 +208,7 @@ class ResourcesTest < FakeApiTest
 
   def test_passkey_backend_and_outage_verifiers
     api.link("pk@acme.com")
-    e = assert_raises(TouchQue::APIError) { tq.webauthn.register_options("pk@acme.com", discoverable: true) }
+    e = assert_raises(Touchque::APIError) { tq.webauthn.register_options("pk@acme.com", discoverable: true) }
     assert_equal [403, "enrollment_approval_required"], [e.status, e.code]
     assert_equal({ "credentials" => [] }, tq.webauthn.list_credentials("pk@acme.com"))
     tq.webauthn.delete_credential("cred 1", external_username: "pk@acme.com")
@@ -221,38 +221,38 @@ class ResourcesTest < FakeApiTest
     v = tq.offline.totp_verifiers(%w[vpn@example.com nobody@example.com], from_step: step - 1, steps: 4)
     assert_equal ["vpn@example.com"], v["users"].map { |u| u["externalUsername"] }
     user = v["users"][0]
-    assert_equal step, TouchQue::Resources::Offline.match_totp_verifier(v, user, "k7p-2qxa", at: now)
-    assert_nil TouchQue::Resources::Offline.match_totp_verifier(v, user, "K7P2QXB", at: now)
-    assert_nil TouchQue::Resources::Offline.match_totp_verifier(v, user, "K7P2QXA", at: now + 3600)
-    assert_nil TouchQue::Resources::Offline.match_totp_verifier(v, user, "K7P2QX1", at: now)
+    assert_equal step, Touchque::Resources::Offline.match_totp_verifier(v, user, "k7p-2qxa", at: now)
+    assert_nil Touchque::Resources::Offline.match_totp_verifier(v, user, "K7P2QXB", at: now)
+    assert_nil Touchque::Resources::Offline.match_totp_verifier(v, user, "K7P2QXA", at: now + 3600)
+    assert_nil Touchque::Resources::Offline.match_totp_verifier(v, user, "K7P2QX1", at: now)
     api.opts(outageVerifiersDisabled: true)
-    assert_raises(TouchQue::APIError) { tq.offline.totp_verifiers(["vpn@example.com"]) }
+    assert_raises(Touchque::APIError) { tq.offline.totp_verifiers(["vpn@example.com"]) }
   end
 
   def resource(headers)
-    status, text, = TouchQue::Transport.call("GET", "#{api.base_url}/__test/resource", headers: headers)
+    status, text, = Touchque::Transport.call("GET", "#{api.base_url}/__test/resource", headers: headers)
     [status, JSON.parse(text)]
   end
 
   def test_org_agent
-    keys = TouchQue::AgentKeys.generate
+    keys = Touchque::AgentKeys.generate
     id = "oagt_abcdefghijkmnpqrstuv"
     api.post("/__test/org-agent", { agentId: id, publicKey: keys["publicJwk"], audiences: [APP], scopes: %w[invoices:read payments:create],
                                     delegation: %w[token_exchange ciba], sharedAccounts: ["k3JInstagramAcme01"] })
-    agent = TouchQue::OrgAgent.new(agent_id: id, private_key: keys["privateJwk"], issuer: api.base_url)
+    agent = Touchque::OrgAgent.new(agent_id: id, private_key: keys["privateJwk"], issuer: api.base_url)
     token = agent.get_token(scope: "invoices:read")
     assert_equal ["DPoP", 300, "invoices:read"], [token["tokenType"], token["expiresIn"], token["scope"]]
     assert_same token, agent.get_token(scope: "invoices:read")
     headers = agent.authorization("GET", "#{api.base_url}/__test/resource", scope: "invoices:read")
     assert_equal [200, { "ok" => true, "sub" => id, "aud" => APP, "via" => "key" }], resource(headers)
     assert_equal 401, resource(headers)[0]
-    assert_equal "invalid_scope", assert_raises(TouchQue::APIError) { agent.get_token(scope: "payments:refund") }.code
+    assert_equal "invalid_scope", assert_raises(Touchque::APIError) { agent.get_token(scope: "payments:refund") }.code
 
     call = ->(t) { resource({ "Authorization" => "DPoP #{t}", "DPoP" => agent.dpop_proof("GET", "#{api.base_url}/__test/resource", t) })[1] }
     assert_equal "ada@acme.com", call.call(agent.exchange_token("member:ada@acme.com")["accessToken"])["sub"]
     assert_equal({ "accessToken" => "ya29.ada@acme.com", "tokenType" => "Bearer", "expiresIn" => 3599, "scope" => "email", "connection" => "google" },
                  agent.get_connection_token("member:ada@acme.com", "google", scope: "email"))
-    assert_equal "invalid_grant", assert_raises(TouchQue::APIError) { agent.get_connection_token("member:ada@acme.com", "github") }.code
+    assert_equal "invalid_grant", assert_raises(Touchque::APIError) { agent.get_connection_token("member:ada@acme.com", "github") }.code
     payment = { "type" => "payment_initiation", "instructedAmount" => { "currency" => "TRY", "amount" => "500.00" } }
     ask = agent.ask_member("ada@acme.com", binding_message: "Pay invoice 42", authorization_details: [payment])
     assert_equal ["42", 1], [ask["bindingCode"], ask["interval"]]
@@ -267,15 +267,15 @@ class ResourcesTest < FakeApiTest
     assert_equal({ "status" => "declined", "reason" => nil, "caseCode" => nil }, agent.wait_for_shared_account(shared, interval: 0.05))
     no = agent.ask_member("ada@acme.com")
     api.post("/__test/ciba-answer", { authReqId: no["authReqId"], approve: false })
-    assert_equal "access_denied", assert_raises(TouchQue::APIError) { agent.wait_for_member(no) }.code
+    assert_equal "access_denied", assert_raises(Touchque::APIError) { agent.wait_for_member(no) }.code
 
     wid = "oagt_bbbbbbbbbbbbbbbbbbbb"
     api.post("/__test/org-agent", { agentId: wid, workload: { subject: "repo:acme/payments:ref:refs/heads/main", audience: "touchque" }, audiences: [APP], scopes: ["invoices:read"] })
     platform = ->(sub) { -> { api.post("/__test/workload-token", { sub: sub, aud: "touchque" })["token"] } }
-    ci = TouchQue::OrgAgent.new(agent_id: wid, issuer: api.base_url, assertion: platform.call("repo:acme/payments:ref:refs/heads/main"))
+    ci = Touchque::OrgAgent.new(agent_id: wid, issuer: api.base_url, assertion: platform.call("repo:acme/payments:ref:refs/heads/main"))
     assert_equal "workload", resource(ci.authorization("GET", "#{api.base_url}/__test/resource"))[1]["via"]
-    assert_raises(TouchQue::APIError) { TouchQue::OrgAgent.new(agent_id: wid, issuer: api.base_url, assertion: platform.call("repo:evil/x")).get_token }
-    assert_raises(TouchQue::ConfigError) { TouchQue::OrgAgent.new(agent_id: id, issuer: "http://sso.example.com", assertion: -> { "x" }) }
+    assert_raises(Touchque::APIError) { Touchque::OrgAgent.new(agent_id: wid, issuer: api.base_url, assertion: platform.call("repo:evil/x")).get_token }
+    assert_raises(Touchque::ConfigError) { Touchque::OrgAgent.new(agent_id: id, issuer: "http://sso.example.com", assertion: -> { "x" }) }
   end
 
   def mcp_token(claims = {})
@@ -283,30 +283,30 @@ class ResourcesTest < FakeApiTest
   end
 
   def test_mcp_auth
-    auth = TouchQue::McpAuth.new(issuer: "#{api.base_url}/mcp-as", resource: RESOURCE, tools: { "search_tickets" => "tickets:read", "delete_ticket" => "tickets:delete" })
+    auth = Touchque::McpAuth.new(issuer: "#{api.base_url}/mcp-as", resource: RESOURCE, tools: { "search_tickets" => "tickets:read", "delete_ticket" => "tickets:delete" })
     assert_equal ["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp"], auth.metadata_paths
     assert_equal ["#{api.base_url}/mcp-as"], auth.protected_resource_metadata["authorization_servers"]
     claims = auth.verify("POST", RESOURCE, { "Authorization" => "Bearer #{mcp_token}" })
     assert_equal ["user-1", ["tickets:read"], false, "https://tool.example/client.json"], [claims["sub"], claims["scopes"], claims["dpopBound"], claims["clientId"]]
     auth.require_tool(claims, "search_tickets")
-    e = assert_raises(TouchQue::McpAuthError) { auth.require_tool(claims, "delete_ticket") }
+    e = assert_raises(Touchque::McpAuthError) { auth.require_tool(claims, "delete_ticket") }
     assert_equal 403, e.status
     assert_includes e.www_authenticate, 'scope="tickets:delete"'
-    e = assert_raises(TouchQue::McpAuthError) { auth.verify("POST", RESOURCE, {}) }
+    e = assert_raises(Touchque::McpAuthError) { auth.verify("POST", RESOURCE, {}) }
     assert_equal [401, 'Bearer resource_metadata="https://mcp.acme.example/.well-known/oauth-protected-resource/mcp"'], [e.status, e.www_authenticate]
     [{ aud: "https://other.example/mcp" }, { iss: "https://evil.example/mcp" }, { expiresIn: -120 }, { typ: "JWT" }].each do |bad|
-      assert_equal "invalid_token", assert_raises(TouchQue::McpAuthError) { auth.verify("POST", RESOURCE, { "Authorization" => "Bearer #{mcp_token(bad)}" }) }.error
+      assert_equal "invalid_token", assert_raises(Touchque::McpAuthError) { auth.verify("POST", RESOURCE, { "Authorization" => "Bearer #{mcp_token(bad)}" }) }.error
     end
 
-    keys = TouchQue::AgentKeys.generate("EdDSA")
+    keys = Touchque::AgentKeys.generate("EdDSA")
     jwk = keys["publicJwk"].slice("kty", "crv", "x")
-    token = mcp_token(jkt: TouchQue::AgentKeys.thumbprint(jwk))
-    signer = TouchQue::SigningKey.load(keys["privateJwk"], "test")
-    proof = ->(htu = RESOURCE) { signer.jws({ "typ" => "dpop+jwt", "jwk" => jwk }, { "htm" => "POST", "htu" => htu, "iat" => TouchQue::Util.now, "jti" => SecureRandom.hex(12), "ath" => TouchQue::AgentKeys.access_token_hash(token) }) }
-    assert_raises(TouchQue::McpAuthError) { auth.verify("POST", RESOURCE, { "Authorization" => "Bearer #{token}" }) }
+    token = mcp_token(jkt: Touchque::AgentKeys.thumbprint(jwk))
+    signer = Touchque::SigningKey.load(keys["privateJwk"], "test")
+    proof = ->(htu = RESOURCE) { signer.jws({ "typ" => "dpop+jwt", "jwk" => jwk }, { "htm" => "POST", "htu" => htu, "iat" => Touchque::Util.now, "jti" => SecureRandom.hex(12), "ath" => Touchque::AgentKeys.access_token_hash(token) }) }
+    assert_raises(Touchque::McpAuthError) { auth.verify("POST", RESOURCE, { "Authorization" => "Bearer #{token}" }) }
     good = proof.call
     assert auth.verify("POST", RESOURCE, { "Authorization" => "DPoP #{token}", "DPoP" => good })["dpopBound"]
-    assert_equal "invalid_dpop_proof", assert_raises(TouchQue::McpAuthError) { auth.verify("POST", RESOURCE, { "Authorization" => "DPoP #{token}", "DPoP" => good }) }.error
-    assert_raises(TouchQue::McpAuthError) { auth.verify("POST", RESOURCE, { "Authorization" => "DPoP #{token}", "DPoP" => proof.call("https://other.example/mcp") }) }
+    assert_equal "invalid_dpop_proof", assert_raises(Touchque::McpAuthError) { auth.verify("POST", RESOURCE, { "Authorization" => "DPoP #{token}", "DPoP" => good }) }.error
+    assert_raises(Touchque::McpAuthError) { auth.verify("POST", RESOURCE, { "Authorization" => "DPoP #{token}", "DPoP" => proof.call("https://other.example/mcp") }) }
   end
 end

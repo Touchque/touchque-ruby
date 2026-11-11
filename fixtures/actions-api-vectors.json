@@ -1,5 +1,5 @@
 {
-  "description": "TouchQue Actions management calls: what each SDK method must send. Run in order against testing/fake-touchque-api.mjs and compare the recorded call (GET /__test/calls, last entry) with `request`: method, path, query (as an object, order-free) and body (deep equal; absent means {} for writes and no body for reads). `args` are language-neutral; each SDK maps them to its own call (camelCase in Node/Go, snake_case keyword arguments in Python, named arguments or an options array in PHP). `status` is the fake API's HTTP status.",
+  "description": "Touchque Actions management calls: what each SDK method must send. Run in order against testing/fake-touchque-api.mjs and compare the recorded call (GET /__test/calls, last entry) with `request`: method, path, query (as an object, order-free) and body (deep equal; absent means {} for writes and no body for reads). `args` are language-neutral; each SDK maps them to its own call (camelCase in Node/Go, snake_case keyword arguments in Python, named arguments or an options array in PHP). `status` is the fake API's HTTP status.",
   "calls": [
     {
       "name": "deploy",

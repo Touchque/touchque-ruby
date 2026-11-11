@@ -1,16 +1,16 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   module Resources
     # Pairing a browser by QR code: your page shows a QR code, the person scans it with
-    # the TouchQue app, and the phone that scanned is the one asked to approve.
+    # the Touchque app, and the phone that scanned is the one asked to approve.
     #
     # 1. Your page gets the thumbprint of its browser key (@touchque/web
     #    browserKey.thumbprint()) and sends it to your server.
     # 2. create(key_thumbprint, client_ip:, user_agent:) registers a pairing and returns
     #    "uri" (touchque://pair-browser?...): show it as a QR code. It can be scanned once,
     #    for ttl_seconds (default 120). The nonce in it never leaves your server and the
-    #    QR: TouchQue keeps only its hash.
+    #    QR: Touchque keeps only its hash.
     # 3. Poll get(pairing_id): "scanned" once a phone holding one of your users' accounts
     #    read it ("externalUsername", "proximity"), "confirmed" once the person went on,
     #    "reported" when they said someone told them to scan it (their 2FA freezes).

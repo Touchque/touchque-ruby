@@ -2,14 +2,14 @@
 
 require "rails/railtie"
 
-module TouchQue
+module Touchque
   # Rails: config.touchque (or credentials.touchque, or TQ_API_KEY / TQ_API_SECRET)
-  # configures TouchQue.client; config.touchque.login configures TouchQue Login.
+  # configures Touchque.client; config.touchque.login configures Touchque Login.
   #
   #   config.touchque.api_key = "tq_..."           # default: credentials.touchque.api_key, then TQ_API_KEY
   #   config.touchque.api_secret = "..."
   #   config.touchque.login = { domain: "acme.login.touchque.com", client_id: "...", client_secret: "..." }
-  #   config.touchque.session_secret = "..."       # TouchQue Login cookies; default: secret_key_base
+  #   config.touchque.session_secret = "..."       # Touchque Login cookies; default: secret_key_base
   class Railtie < ::Rails::Railtie
     config.touchque = ActiveSupport::OrderedOptions.new
 
@@ -21,10 +21,10 @@ module TouchQue
         api_secret: settings.api_secret || credentials[:api_secret],
         base_url: settings.base_url || credentials[:base_url]
       }.compact
-      TouchQue.configure(**options) unless options.empty?
+      Touchque.configure(**options) unless options.empty?
       login = settings.login || credentials[:login]
-      TouchQue.login_options = login.to_h if login
-      TouchQue.login_secret = -> { settings.session_secret || app.secret_key_base }
+      Touchque.login_options = login.to_h if login
+      Touchque.login_secret = -> { settings.session_secret || app.secret_key_base }
     end
 
     initializer "touchque.sessions_controller" do

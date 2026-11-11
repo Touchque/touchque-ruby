@@ -14,7 +14,7 @@
 //
 // Feature gate: /__test/opts { featureRefused: 'feature_not_in_plan' | 'feature_read_only' | 'feature_off',
 // feature } makes every signed call answer 403 { error, feature, message } until it is set to null.
-// TouchQue Login: /identity/* answers signed calls with { ok: true } (lists, jobs: their shapes).
+// Touchque Login: /identity/* answers signed calls with { ok: true } (lists, jobs: their shapes).
 // QR pairing: POST /qr-pairings, GET /qr-pairings/{id}, POST /qr-pairings/{id}/outcome; the phone's side
 // is test control: POST /__test/qr-scan {id?, user, proximity?, confirm?}, /__test/qr-report {id?},
 // /__test/qr-decline {id?}; /login/request with qrPairing asks once, number matched, for the user that scanned.
@@ -34,7 +34,7 @@
 // user can vouch. POST /__test/recovery {id?, to} moves a case to VOUCHING
 // (the new phone bound, codes 11, 12, ...), COOLING or COMPLETED.
 //
-// TouchQue Actions: /actions* keeps Actions, versions and secret names in
+// Touchque Actions: /actions* keeps Actions, versions and secret names in
 // memory (no code runs: test and dry-run answer empty results). A version that
 // asks for a capability is pending_approval until POST /__test/approve-version
 // {slug, number} (the dashboard's phone approval).
@@ -531,14 +531,14 @@ const RECOVERY_OPEN = ['AWAITING_DEVICE', 'VOUCHING', 'COOLING'];
 const recoveryView = ({ bindCode, bindUri, ...c }) => c;
 route('POST', '/recovery/vouchers', (req, res, b) => {
   if (typeof b.externalUsername !== 'string' || !b.externalUsername || !Array.isArray(b.vouchers)) return send(res, 400, { code: 'invalid_request', error: 'externalUsername and vouchers are required' });
-  if (!state.linked.has(b.externalUsername) && !state.pending.has(b.externalUsername)) return send(res, 404, { code: 'user_not_found', error: 'No TouchQue user with this externalUsername' });
+  if (!state.linked.has(b.externalUsername) && !state.pending.has(b.externalUsername)) return send(res, 404, { code: 'user_not_found', error: 'No Touchque user with this externalUsername' });
   state.vouchers.set(b.externalUsername, [...new Set(b.vouchers.filter((v) => typeof v === 'string' && v && v !== b.externalUsername))].slice(0, 5));
   send(res, 200, voucherView(b.externalUsername));
 });
 route('GET', '/recovery/vouchers', (req, res) => {
   const user = new URL(req.url, 'http://x').searchParams.get('externalUsername');
   if (!user) return send(res, 400, { code: 'invalid_request', error: 'externalUsername is required' });
-  if (!state.linked.has(user) && !state.pending.has(user)) return send(res, 404, { code: 'user_not_found', error: 'No TouchQue user with this externalUsername' });
+  if (!state.linked.has(user) && !state.pending.has(user)) return send(res, 404, { code: 'user_not_found', error: 'No Touchque user with this externalUsername' });
   send(res, 200, voucherView(user));
 });
 route('POST', '/recovery/start', (req, res, b) => {
@@ -607,7 +607,7 @@ const assistOpen = (res, a) => {
 route('POST', '/assist', (req, res, b) => {
   const user = typeof b.externalUsername === 'string' ? b.externalUsername : '';
   if (!user || !b.agent || typeof b.agent.name !== 'string' || !b.agent.name) return send(res, 400, { code: 'invalid_request', error: 'externalUsername and agent.name are required' });
-  if (!state.linked.has(user) && !state.pending.has(user)) return send(res, 404, { code: 'user_not_found', error: 'No TouchQue user with this externalUsername' });
+  if (!state.linked.has(user) && !state.pending.has(user)) return send(res, 404, { code: 'user_not_found', error: 'No Touchque user with this externalUsername' });
   const ref = b.agent.ref || b.agent.name;
   for (const old of state.assists.values()) if (old.externalUsername === user && old.agent.ref === ref && old.status === 'OPEN') Object.assign(old, { status: 'ENDED', endedAt: new Date().toISOString(), endedReason: 'replaced' });
   const id = `00000000-0000-4000-b000-${String(++state.seq).padStart(12, '0')}`;
@@ -638,7 +638,7 @@ route('POST', '/assist/([^/]+)/verify', (req, res, b, m) => {
   const a = assistOf(res, m[1]);
   if (!a || !assistOpen(res, a)) return;
   if (typeof b.action !== 'string' || !/^[a-z][a-z0-9_]*$/.test(b.action)) return send(res, 400, { code: 'invalid_request', error: 'action must be lowercase letters, digits and underscores' });
-  if (!state.linked.has(a.externalUsername)) return send(res, 409, { code: 'no_phone', route: 'never_locked_out', error: 'This person has no working TouchQue phone to check.' });
+  if (!state.linked.has(a.externalUsername)) return send(res, 409, { code: 'no_phone', route: 'never_locked_out', error: 'This person has no working Touchque phone to check.' });
   if (a.checks.length >= 10) return send(res, 429, { code: 'rate_limited', error: 'Too many checks in this session. Start a new one.' });
   const requestId = `00000000-0000-4000-c000-${String(++state.seq).padStart(12, '0')}`;
   const challengeCode = String(crypto.randomInt(10, 100));
@@ -679,7 +679,7 @@ route('POST', '/__test/assist', (req, res, b) => {
   send(res, 200, { requestId: hit.c.requestId, outcome, challengeCode: hit.c.challengeCode });
 });
 
-// ── TouchQue Actions (in memory; nothing runs) ──
+// ── Touchque Actions (in memory; nothing runs) ──
 const TRIGGERS = ['login.request', 'risk.check', 'approval.decided', 'shield.decision', 'fraud.reported', 'device.linked', 'device.keys_lost', 'user.unlinked', 'passkey.added', 'passkey.removed', 'recovery.updated'];
 const flowView = (a) => ({ slug: a.slug, name: a.name, trigger: a.trigger, enabled: a.enabled, order: a.order, onFailure: a.onFailure, activeVersion: a.activeVersion, createdAt: a.createdAt, updatedAt: a.updatedAt });
 const versionView = (a, v, withCode = false) => {
@@ -954,7 +954,7 @@ route('DELETE', '/mobile/devices/([^/]+)', (req, res, b, m) => {
   if (wasLinked) { Object.assign(d, { revokedAt: new Date().toISOString(), revokedReason: 'removed' }); state.linked.delete(d.user); }
   send(res, 200, { removed: true, wasLinked });
 });
-// A test push: which way it would go (TouchQue with your key, or the webhook).
+// A test push: which way it would go (Touchque with your key, or the webhook).
 route('POST', '/mobile/devices/([^/]+)/test-push', (req, res, b, m) => {
   const ms = mobileState();
   const d = ms.devices.get(decodeURIComponent(m[1]));
@@ -967,7 +967,7 @@ route('PUT', '/mobile/settings', (req, res, b) => {
   const ms = mobileState();
   if (b.attestation !== undefined && !['off', 'optional', 'required'].includes(b.attestation)) return send(res, 400, { code: 'invalid_settings', error: 'attestation must be one of off, optional, required' });
   for (const k of ['iosAppIds', 'androidPackages', 'androidCerts', 'attestation', 'enrollTtlSeconds']) if (b[k] !== undefined) ms.settings[k] = b[k];
-  // The workspace's own push keys: TouchQue sends the push for that platform (the keys are never shown back).
+  // The workspace's own push keys: Touchque sends the push for that platform (the keys are never shown back).
   if (b.apns !== undefined) {
     if (b.apns !== null && !/^[A-Z0-9]{10}$/.test(b.apns.keyId || '')) return send(res, 400, { code: 'invalid_settings', error: 'apns.keyId must be the 10-character key id' });
     ms.settings.push.apns = b.apns && { keyId: b.apns.keyId, teamId: b.apns.teamId, topic: b.apns.topic, production: b.apns.production === true };
@@ -1374,7 +1374,7 @@ route('POST', '/agents/approvals/redeem', (req, res, b) => {
   } });
 });
 
-// ── TouchQue Login Management API (/identity): signed like every partner call;
+// ── Touchque Login Management API (/identity): signed like every partner call;
 // answers only what the SDKs read back. Tests look at GET /__test/calls.
 function identityEcho(req, res, b, m) {
   const path = m[0];
@@ -1383,7 +1383,7 @@ function identityEcho(req, res, b, m) {
   if (req.method === 'GET' && list) return send(res, 200, { [list]: [] });
   return send(res, 200, { ok: true });
 }
-// TouchQue SSO's token endpoint for an organization's AI agents: its key or its
+// Touchque SSO's token endpoint for an organization's AI agents: its key or its
 // platform's token, a DPoP proof, one app per token.
 // The "platform" is this fake: /__test/workload-token signs RS256 tokens as ${base}/__test/issuer.
 const workloadKey = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -1527,7 +1527,7 @@ route('GET', '/__test/resource', (req, res) => {
   send(res, 200, { ok: true, sub: entry.sub || entry.agentId, aud: entry.aud, via: entry.via, ...(entry.act && { act: entry.act }) });
 });
 
-// An MCP authorization server for the SDKs' McpAuth tests (TouchQue SSO's issuer <sso>/mcp):
+// An MCP authorization server for the SDKs' McpAuth tests (Touchque SSO's issuer <sso>/mcp):
 // RFC 8414 metadata at /.well-known/oauth-authorization-server/mcp-as, its JWKS, and
 // /__test/mcp-token signing an at+jwt with { sub, aud, scope, jkt?, expiresIn?, iss? }.
 const mcpKey = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });

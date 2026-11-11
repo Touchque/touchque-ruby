@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   # The headless step-up flow shared by every integration: start → show the step in
   # YOUR UI → check → complete exactly once. A "step" is a plain Hash, safe to send to
   # the browser as JSON: state (waiting | approved | rejected | expired | enroll |
@@ -146,18 +146,18 @@ module TouchQue
   end
 
   # Framework-agnostic step-up guard (the Rails concern is a thin wrapper over it).
-  # Contract, the same in every TouchQue server SDK:
+  # Contract, the same in every Touchque server SDK:
   #   1st request            -> 202 {"touchque" => step, "token" => ...}  show the step in your UI
   #   repeat with the token   -> 202 while waiting, then the protected action runs once
   #   refused                 -> 403 / 408 / 423 / 429 {"touchque" => {"state" => ...}}
-  # Request headers the browser sends back: X-TouchQue-Token, X-TouchQue-Offline: 1,
-  # X-TouchQue-Code (+ X-TouchQue-Code-Type: totp), X-TouchQue-Browser (silent sign-ins).
+  # Request headers the browser sends back: X-Touchque-Token, X-Touchque-Offline: 1,
+  # X-Touchque-Code (+ X-Touchque-Code-Type: totp), X-Touchque-Browser (silent sign-ins).
   module Guard
-    TOKEN_HEADER = "X-TouchQue-Token"
-    OFFLINE_HEADER = "X-TouchQue-Offline"
-    CODE_HEADER = "X-TouchQue-Code"
-    CODE_TYPE_HEADER = "X-TouchQue-Code-Type"
-    BROWSER_HEADER = "X-TouchQue-Browser"
+    TOKEN_HEADER = "X-Touchque-Token"
+    OFFLINE_HEADER = "X-Touchque-Offline"
+    CODE_HEADER = "X-Touchque-Code"
+    CODE_TYPE_HEADER = "X-Touchque-Code-Type"
+    BROWSER_HEADER = "X-Touchque-Browser"
 
     TOKEN_TTL_MS = 10 * 60 * 1000
     MAX_BROWSER_PROOF = 4096
@@ -210,7 +210,7 @@ module TouchQue
     # Runs one step of the guard: {status: 200, approved: approval} (run your protected
     # action once) or {status:, body: {"touchque" => step, "token" => ...}} to send back.
     # Silent sign-ins: with +silent_sign_in+ on, a new attempt that carries a browser
-    # proof first asks TouchQue (risk.check); only an answer of exactly prompt: false
+    # proof first asks Touchque (risk.check); only an answer of exactly prompt: false
     # approves at once with no push. Otherwise, and on any error, the usual push starts.
     def run(client, user, action, details: nil, reference_id: nil, ip: nil, user_agent: nil, token: nil, offline: false,
             code: nil, code_type: nil, enroll: true, browser_proof: nil, silent_sign_in: false, context: nil)
@@ -322,12 +322,12 @@ module TouchQue
         issue.call(Steps.start(client, action, user, details: norm, reference_id: reference_id, ip: ip, user_agent: user_agent,
                                                      enroll: enroll, browser_proof: proof, context: context))
       rescue ConfigError => e
-        TouchQue.log :error, "[TouchQue] #{e.message}"
+        Touchque.log :error, "[Touchque] #{e.message}"
         error(500, { "state" => "blocked", "reason" => "misconfigured" }, "misconfigured", "Two-factor approval is not configured correctly.")
       rescue StandardError => e
         # Anything else (Touchque unreachable, an approval for another transaction, a bug)
         # fails closed with the contract's 503, never a bare 500.
-        TouchQue.log :error, "[TouchQue] approval failed: #{e.class}: #{e.message}"
+        Touchque.log :error, "[Touchque] approval failed: #{e.class}: #{e.message}"
         error(503, { "state" => "blocked", "reason" => "unavailable" }, "unavailable", "Two-factor approval is temporarily unavailable.")
       end
     end
@@ -347,11 +347,11 @@ module TouchQue
         "requestId" => "silent", "user" => user, "action" => action,
         "assurance" => { "phishingResistant" => false, "method" => "silent" },
         "confirmedVia" => "SILENT", "approvalProof" => nil,
-        # Nothing was sent to the phone; why TouchQue let this known browser in.
+        # Nothing was sent to the phone; why Touchque let this known browser in.
         "reasons" => res["reasons"]
       }
     rescue StandardError => e
-      TouchQue.log :warn, "[TouchQue] silent sign-in check failed, asking the phone: #{e.class}: #{e.message}"
+      Touchque.log :warn, "[Touchque] silent sign-in check failed, asking the phone: #{e.class}: #{e.message}"
       nil
     end
 

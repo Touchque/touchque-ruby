@@ -2,11 +2,11 @@
 
 require "test_helper"
 
-# Against the shared fake TouchQue API: a real HTTP round trip, so request signing is
+# Against the shared fake Touchque API: a real HTTP round trip, so request signing is
 # verified too. Same scenarios as the Node/Python/PHP/Go/.NET step-up tests.
 class ContractTest < FakeApiTest
   def guard(user, token: nil, offline: false, code: nil, code_type: nil, action: "LOGIN")
-    TouchQue::Guard.run(tq, user, action, token: token, offline: offline, code: code, code_type: code_type)
+    Touchque::Guard.run(tq, user, action, token: token, offline: offline, code: code, code_type: code_type)
   end
 
   def step(res) = res[:body]["touchque"]
@@ -26,7 +26,7 @@ class ContractTest < FakeApiTest
     report = tq.login.report_fraud(sent["requestId"], reason: "chargeback", note: "card holder disputed it")
     assert_equal [true, false], [report["reported"], report["alreadyReported"]]
     assert tq.login.report_fraud(sent["requestId"])["alreadyReported"]
-    assert_raises(TouchQue::ConfigError) { tq.login.report_fraud("") }
+    assert_raises(Touchque::ConfigError) { tq.login.report_fraud("") }
   end
 
   def test_verify_runs_on_challenge_before_the_wait
@@ -40,12 +40,12 @@ class ContractTest < FakeApiTest
     assert result["approved"]
     assert_equal %w[47 K7P-2QX], [seen["challengeCode"], seen["caseCode"]]
     assert_includes seen["reasons"].map { |r| r["code"] }, "number_match_requested"
-    assert_raises(TouchQue::RejectedError) { tq.login.verify("bo@acme.com") { |c| api.reject(c["requestId"]) } }
+    assert_raises(Touchque::RejectedError) { tq.login.verify("bo@acme.com") { |c| api.reject(c["requestId"]) } }
     api.opts(passkeyOnly: true)
-    assert_equal "policy", assert_raises(TouchQue::PasskeyRequiredError) { tq.login.verify("bo@acme.com") }.reason
+    assert_equal "policy", assert_raises(Touchque::PasskeyRequiredError) { tq.login.verify("bo@acme.com") }.reason
     api.opts(passkeyOnly: false)
-    assert_equal "step_up", assert_raises(TouchQue::PasskeyRequiredError) { tq.login.verify("bo@acme.com") { |c| api.escalate(c["requestId"]) } }.reason
-    assert_raises(TouchQue::TimeoutError) { tq.login.verify("bo@acme.com", timeout: 0.5) }
+    assert_equal "step_up", assert_raises(Touchque::PasskeyRequiredError) { tq.login.verify("bo@acme.com") { |c| api.escalate(c["requestId"]) } }.reason
+    assert_raises(Touchque::TimeoutError) { tq.login.verify("bo@acme.com", timeout: 0.5) }
   end
 
   def test_verify_sends_expires_in_and_client_signals
@@ -61,22 +61,22 @@ class ContractTest < FakeApiTest
     refute api.last_call["body"].key?("referenceId")
     api.approve(s["requestId"])
     assert_equal "SEND_MONEY", tq.complete(s["requestId"], "ref@acme.com", "SEND_MONEY", reference_id: "")["action"]
-    first = TouchQue::Guard.run(tq, "ref@acme.com", "SEND_MONEY", reference_id: "")
+    first = Touchque::Guard.run(tq, "ref@acme.com", "SEND_MONEY", reference_id: "")
     api.approve
-    assert_equal 200, TouchQue::Guard.run(tq, "ref@acme.com", "SEND_MONEY", reference_id: "", token: token(first))[:status]
+    assert_equal 200, Touchque::Guard.run(tq, "ref@acme.com", "SEND_MONEY", reference_id: "", token: token(first))[:status]
   end
 
   def test_guard_answers_503_for_any_failure_never_500
     api.link("down@acme.com")
     client = tq
-    first = TouchQue::Guard.run(client, "down@acme.com", "LOGIN")
+    first = Touchque::Guard.run(client, "down@acme.com", "LOGIN")
     api.approve
     # The approval comes back for another person: never run the action, never a bare 500.
     client.login.define_singleton_method(:consume) { |_id| { "externalUsername" => "mallory@acme.com", "type" => "LOGIN" } }
-    mismatch = TouchQue::Guard.run(client, "down@acme.com", "LOGIN", token: token(first))
+    mismatch = Touchque::Guard.run(client, "down@acme.com", "LOGIN", token: token(first))
     assert_equal [503, "unavailable"], [mismatch[:status], step(mismatch)["reason"]]
     client.login.define_singleton_method(:request) { |*, **| raise Errno::ENETUNREACH }
-    assert_equal 503, TouchQue::Guard.run(client, "down@acme.com", "LOGIN")[:status]
+    assert_equal 503, Touchque::Guard.run(client, "down@acme.com", "LOGIN")[:status]
   end
 
   def test_a_garbled_answer_is_a_network_error
@@ -89,15 +89,15 @@ class ContractTest < FakeApiTest
         conn.close
       end
     end
-    client = TouchQue::Client.new(api_key: "tq_k", api_secret: "s", base_url: "http://127.0.0.1:#{server.addr[1]}")
-    assert_raises(TouchQue::NetworkError) { client.login.status("r1") }
+    client = Touchque::Client.new(api_key: "tq_k", api_secret: "s", base_url: "http://127.0.0.1:#{server.addr[1]}")
+    assert_raises(Touchque::NetworkError) { client.login.status("r1") }
   ensure
     thread&.kill
     server&.close
   end
 
   def test_unlinked_user_is_a_clear_api_error
-    e = assert_raises(TouchQue::APIError) { tq.login.request("nobody@acme.com") }
+    e = assert_raises(Touchque::APIError) { tq.login.request("nobody@acme.com") }
     assert_equal [404, "device_not_linked"], [e.status, e.code]
   end
 
@@ -118,15 +118,15 @@ class ContractTest < FakeApiTest
     assert_equal "approved", tq.check(s["requestId"])["state"]
     approval = tq.complete(s["requestId"], "Jane@acme.com", "SEND_MONEY", details: { "Amount" => "250 EUR" }, reference_id: "tx-9")
     assert_equal({ "phishingResistant" => false, "method" => "push" }, approval["assurance"])
-    assert_equal "already_used", assert_raises(TouchQue::APIError) { tq.complete(s["requestId"], "jane@acme.com", "SEND_MONEY", details: { "Amount" => "250 EUR" }, reference_id: "tx-9") }.code
+    assert_equal "already_used", assert_raises(Touchque::APIError) { tq.complete(s["requestId"], "jane@acme.com", "SEND_MONEY", details: { "Amount" => "250 EUR" }, reference_id: "tx-9") }.code
   end
 
   def test_complete_refuses_a_different_amount_and_unknown_actions
     api.link("jane2@acme.com")
     s = tq.start("SEND_MONEY", "jane2@acme.com", details: { "Amount" => "250 EUR" })
     api.approve(s["requestId"])
-    assert_raises(TouchQue::ApprovalMismatchError) { tq.complete(s["requestId"], "jane2@acme.com", "SEND_MONEY", details: { "Amount" => "9999 EUR" }) }
-    assert_match(/NOT_DEFINED/, assert_raises(TouchQue::ConfigError) { tq.start("NOT_DEFINED", "jane2@acme.com") }.message)
+    assert_raises(Touchque::ApprovalMismatchError) { tq.complete(s["requestId"], "jane2@acme.com", "SEND_MONEY", details: { "Amount" => "9999 EUR" }) }
+    assert_match(/NOT_DEFINED/, assert_raises(Touchque::ConfigError) { tq.start("NOT_DEFINED", "jane2@acme.com") }.message)
   end
 
   def test_guard_and_on_challenge_log_only_through_touchque_logger
@@ -139,7 +139,7 @@ class ContractTest < FakeApiTest
     assert_equal ["", ""], [out, err], "silent by default"
 
     lines = []
-    TouchQue.logger = Object.new.tap do |l|
+    Touchque.logger = Object.new.tap do |l|
       l.define_singleton_method(:warn) { |m| lines << [:warn, m] }
       l.define_singleton_method(:error) { |m| lines << [:error, m] }
     end
@@ -147,9 +147,9 @@ class ContractTest < FakeApiTest
     tq.login.verify("jane4@acme.com", timeout: 10) { |c| api.approve(c["requestId"]) && raise("screen gone") }
     assert_equal :error, lines[0][0]
     assert_match(/NOT_DEFINED/, lines[0][1])
-    assert_equal [:warn, "[TouchQue] on_challenge failed: RuntimeError: screen gone"], lines[1]
+    assert_equal [:warn, "[Touchque] on_challenge failed: RuntimeError: screen gone"], lines[1]
   ensure
-    TouchQue.logger = nil
+    Touchque.logger = nil
   end
 
   def test_action_types_define
@@ -166,7 +166,7 @@ class ContractTest < FakeApiTest
     first = guard("guard@acme.com")
     assert_equal [202, "waiting", "47"], [first[:status], step(first)["state"], step(first)["number"]]
     assert_equal 202, guard("guard@acme.com", token: token(first))[:status]
-    assert TouchQue::Guard.status_poll?(tq, "guard@acme.com", "LOGIN", token: token(first))
+    assert Touchque::Guard.status_poll?(tq, "guard@acme.com", "LOGIN", token: token(first))
     api.approve
     done = guard("guard@acme.com", token: token(first))
     assert_equal [200, "push"], [done[:status], done[:approved]["assurance"]["method"]]
@@ -275,13 +275,13 @@ class ContractTest < FakeApiTest
   def test_recovery_code_and_auth_user
     gen = tq.auth.generate_secret("eve@acme.com")
     assert gen["qrCodeDataUrl"].start_with?("data:image/png;base64,")
-    assert_equal 409, assert_raises(TouchQue::APIError) { tq.auth.generate_secret("eve@acme.com") }.status
+    assert_equal 409, assert_raises(Touchque::APIError) { tq.auth.generate_secret("eve@acme.com") }.status
     pending = tq.auth.get_user("eve@acme.com")
     assert_equal [false, nil], [pending["used"], pending["device"]]
     api.link("eve@acme.com")
     linked = tq.auth.get_user("eve@acme.com")
     assert_equal [true, "healthy", "ios"], [linked["used"], linked["device"]["state"], linked["device"]["platform"]]
-    assert_equal 404, assert_raises(TouchQue::APIError) { tq.auth.get_user("nobody@acme.com") }.status
+    assert_equal 404, assert_raises(Touchque::APIError) { tq.auth.get_user("nobody@acme.com") }.status
     sent = tq.login.request("eve@acme.com")
     assert tq.login.approve_with_recovery_code(sent["requestId"], "r1")["success"]
   end

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   # An A2A agent card that did not verify. +error+ is unsigned, malformed,
   # untrusted_key, invalid_signature or keys_unavailable.
   class AgentCardError < Error
@@ -23,7 +23,7 @@ module TouchQue
   # card is checked as received.
   #
   #   json = Net::HTTP.get(URI("https://agent.example/.well-known/agent-card.json"))
-  #   TouchQue::AgentCard.verify(json, card_url: "https://agent.example/.well-known/agent-card.json")
+  #   Touchque::AgentCard.verify(json, card_url: "https://agent.example/.well-known/agent-card.json")
   module AgentCard
     ALGS = %w[RS256 ES256 EdDSA].freeze
 

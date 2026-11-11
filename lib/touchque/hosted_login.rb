@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-module TouchQue
-  # TouchQue Login (hosted sign-in) for your app: an OpenID Connect client for your
+module Touchque
+  # Touchque Login (hosted sign-in) for your app: an OpenID Connect client for your
   # tenant (acme.login.touchque.com or your own domain). PKCE (S256) is always used.
   # ID tokens are checked against the tenant's JWKS (RS256, issuer, audience, expiry,
   # nonce, at_hash); your API checks access tokens with verify_access_token. In Rails,
-  # TouchQue::Rails::HostedLogin wires the routes for you.
+  # Touchque::Rails::HostedLogin wires the routes for you.
   #
-  #   login = TouchQue::HostedLogin.new(domain: "acme.login.touchque.com", client_id: "...", client_secret: "...",
+  #   login = Touchque::HostedLogin.new(domain: "acme.login.touchque.com", client_id: "...", client_secret: "...",
   #                                     redirect_uri: "https://app/callback")
   #   req = login.authorization_url              # keep state, nonce, code_verifier; redirect to req["url"]
   #   tokens = login.handle_callback(request.url, state: req["state"], nonce: req["nonce"], code_verifier: req["codeVerifier"])
@@ -136,7 +136,7 @@ module TouchQue
     end
 
     # Token vault: the provider's own access token (Google, Microsoft, GitHub...) for the
-    # signed-in user, from a connection that stores tokens. TouchQue refreshes it; the
+    # signed-in user, from a connection that stores tokens. Touchque refreshes it; the
     # refresh token never leaves. HostedLoginError invalid_grant when nothing is stored.
     def get_connection_token(user_access_token, connection, scope: nil)
       token("grant_type" => "urn:ietf:params:oauth:grant-type:token-exchange", "subject_token" => user_access_token,
@@ -312,7 +312,7 @@ module TouchQue
     end
   end
 
-  # The TouchQue Login My Account API (/me/v1) from your server: the signed-in customer's
+  # The Touchque Login My Account API (/me/v1) from your server: the signed-in customer's
   # own profile, sign-in methods, devices, apps and data, called with their access token
   # for audience https://<domain>/me/. Security changes, the data export and deletion need
   # a recent sign-in; when it is too old a MyAccountError with step_up? is raised.

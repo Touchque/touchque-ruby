@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-module TouchQue
+module Touchque
   module Resources
     # Action types (LOGIN, SEND_MONEY...): what a user is asked to approve. Define them
     # from code at start-up instead of clicking them into the dashboard.
@@ -30,9 +30,9 @@ module TouchQue
       end
     end
 
-    # TouchQue Actions: your own code at points of the approval pipeline (before the push
+    # Touchque Actions: your own code at points of the approval pipeline (before the push
     # is sent, the silent sign-in decision, after an approval, fraud reports, device and
-    # recovery events). TouchQue runs it in a sandbox; this resource deploys, tests,
+    # recovery events). Touchque runs it in a sandbox; this resource deploys, tests,
     # replays and observes it.
     #
     #   tq.actions.deploy("night-alert", trigger: "approval.decided",

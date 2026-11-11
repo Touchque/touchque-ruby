@@ -20,7 +20,7 @@
       "expected": "6Sg5H4nmoE2xqJIalKAyKyqOHhpVAXCNxp2oUeHDz90"
     },
     "maxSkewSeconds": 300,
-    "header": "X-TouchQue-Browser",
+    "header": "X-Touchque-Browser",
     "cases": [
       {
         "name": "valid",

@@ -2,10 +2,10 @@
 
 require "openssl"
 
-module TouchQue
-  # Safe Guard approvals, checked without trusting TouchQue. The approver's phone decodes the
+module Touchque
+  # Safe Guard approvals, checked without trusting Touchque. The approver's phone decodes the
   # raw Safe transaction itself and signs, with a P-256 key only its biometrics unlock, a
-  # 105-byte approval that TouchQueSafeGuard checks on chain:
+  # 105-byte approval that TouchqueSafeGuard checks on chain:
   #
   #   index (1) | expiresAt (8) | displayDigest (32) | r (32) | s (32)
   #
@@ -81,7 +81,7 @@ module TouchQue
       "0x#{OpenSSL::Digest::SHA256.hexdigest(canonical.encode("UTF-8"))}"
     end
 
-    # Checks a phone's Safe Guard approval the way TouchQueSafeGuard does, without trusting the
+    # Checks a phone's Safe Guard approval the way TouchqueSafeGuard does, without trusting the
     # server that relayed it: the Safe and governance hashes come from +target+, the key from
     # the guard's approver list on chain ("x || y", 128 hex characters, or { "x", "y" }).
     # +purpose+: what you are about to use the approval for, "approve" (the default: run this
@@ -97,7 +97,7 @@ module TouchQue
     # signature_invalid. Raises ConfigError only when +target+ is not a Safe transaction.
     #
     #   status = tq.safe_guard.status(request_id)
-    #   check = TouchQue::SafeApproval.verify(my_tx, status["safeTx"]["approval"], approver_key_from_chain, approver_index: 0)
+    #   check = Touchque::SafeApproval.verify(my_tx, status["safeTx"]["approval"], approver_key_from_chain, approver_index: 0)
     #   raise "approval refused: #{check["reason"]}" unless check["valid"]
     def verify(target, approval, public_key, purpose: nil, approver_index: nil, display_digest: nil, rows: nil, now: nil)
       t = parse(target)
@@ -194,6 +194,7 @@ module TouchQue
     TYPE_HASHES = {
       domain: keccak256("EIP712Domain(uint256 chainId,address verifyingContract)"),
       safe_tx: keccak256("SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)"),
+      # The guard contract hashes this exact string, so it keeps its original spelling.
       governance: keccak256("TouchQueGovernance(uint256 chainId,address safe,address to,uint256 value,bytes32 dataHash,uint8 operation)"),
       schedule: keccak256("schedule(address,bytes32,bytes)")
     }.freeze
