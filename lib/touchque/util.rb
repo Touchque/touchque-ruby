@@ -83,6 +83,16 @@ module Touchque
       end
     end
 
+    # A deep copy of JSON-like data: Hashes, Arrays and Strings copied, anything else as it is.
+    def deep_copy(value)
+      case value
+      when Hash then value.to_h { |k, v| [k, deep_copy(v)] }
+      when Array then value.map { |v| deep_copy(v) }
+      when String then value.dup
+      else value
+      end
+    end
+
     # A hash without nil values (and, for strings, without empty ones).
     def compact(hash)
       hash.reject { |_, v| v.nil? || (v.is_a?(String) && v.empty?) }

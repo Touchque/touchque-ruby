@@ -798,18 +798,23 @@ route('GET', '/actions/([a-z0-9][a-z0-9-]{1,62})/metrics', (req, res, b, m) => {
   if (!flowOf(res, m[1])) return;
   const window = new URL(req.url, 'http://x').searchParams.get('window') || '24h';
   send(res, 200, { window, runs: 0, errors: 0, timeouts: 0, errorRate: 0, p50Ms: 0, p95Ms: 0, decisions: {}, notifications: { sent: 0, failed: 0, skipped: 0 } });});
+// A first-time linking QR lives 5 minutes, like the API's; `__test/opts` { secretTtlMs } shortens it.
+const secretExpiry = () => {
+  const ttlMs = Number.isFinite(state.opts.secretTtlMs) ? state.opts.secretTtlMs : 300000;
+  return { expiresAt: new Date(Date.now() + ttlMs).toISOString(), ttlMs };
+};
 route('POST', '/auth/generate-secret', (req, res, b) => {
   const u = b.externalUsername;
   if (state.linked.has(u)) return send(res, 409, { error: 'already linked' });
   if (state.pending.has(u)) return send(res, 409, { error: 'Secret already generated' });
   state.pending.add(u);
-  send(res, 200, { secret: 'S', qrCodeDataUrl: `data:image/png;base64,QR-${u}`, externalUsername: u, expiresAt: 'soon', ttlMs: 300000, recoveryCodes: ['r1'] });
+  send(res, 200, { secret: 'S', qrCodeDataUrl: `data:image/png;base64,QR-${u}`, externalUsername: u, ...secretExpiry(), recoveryCodes: ['r1'] });
 });
 route('POST', '/auth/secret/reset', (req, res, b) => {
   const u = b.externalUsername;
   state.linked.delete(u);
   state.pending.add(u);
-  send(res, 200, { success: true, secret: 'S2', qrCodeDataUrl: `data:image/png;base64,QR2-${u}`, externalUsername: u, recoveryCodes: ['r2'] });
+  send(res, 200, { success: true, secret: 'S2', qrCodeDataUrl: `data:image/png;base64,QR2-${u}`, externalUsername: u, ...secretExpiry(), recoveryCodes: ['r2'] });
 });
 // A healthy phone posture, like the real API's `device` on a user with a linked phone.
 const DEVICE_POSTURE = {

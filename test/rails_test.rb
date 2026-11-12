@@ -13,6 +13,7 @@ require "touchque/railtie"
 
 TENANT = FakeTenant.new
 WEBHOOK_EVENTS = []
+TRANSFERS_RAN = []
 
 class TouchqueTestApp < Rails::Application
   config.root = __dir__
@@ -33,7 +34,27 @@ class TransfersController < ActionController::Base
   require_touchque "SEND_MONEY", only: :create, user: -> { request.headers["X-User"] }, details: -> { { "Amount" => params[:amount].to_s } }
 
   def create
+    TRANSFERS_RAN << touchque_approval["requestId"]
     render json: { via: touchque_approval["confirmedVia"] }
+  end
+end
+
+# require_touchque with error_body: the test sets the shape; the proc runs in the controller.
+class ShapedTransfersController < ActionController::Base
+  include Touchque::Rails::Guard
+
+  class << self
+    attr_accessor :shape, :refusals
+  end
+
+  require_touchque "SEND_MONEY", only: :create, user: -> { request.headers["X-User"] },
+                                 error_body: lambda { |refusal|
+                                   self.class.refusals << refusal
+                                   self.class.shape.call(refusal)
+                                 }
+
+  def create
+    render json: { ran: true }
   end
 end
 
@@ -62,6 +83,7 @@ TouchqueTestApp.initialize!
 Touchque.hosted_login = Touchque::HostedLogin.new(domain: FakeTenant::ISSUER, client_id: FakeTenant::CLIENT, client_secret: "s3cret", transport: TENANT.transport)
 TouchqueTestApp.routes.draw do
   post "/transfer" => "transfers#create"
+  post "/shaped" => "shaped_transfers#create"
   post "/webhooks/touchque" => "webhooks#create"
   get "/account" => "account#show"
   Touchque::Rails.login_routes(self)
@@ -116,6 +138,185 @@ class RailsTest < FakeApiTest
     header "X-User", "bo@acme.com"
     post "/transfer", { amount: "1" }
     assert_equal [423, "900"], [last_response.status, last_response.headers["Retry-After"]]
+  end
+
+  MISCONFIGURED = { "touchque" => { "state" => "blocked", "reason" => "misconfigured" },
+                    "error" => { "code" => "misconfigured", "message" => "Two-factor approval is not configured correctly." } }.freeze
+  UNAUTHENTICATED = { "touchque" => { "state" => "blocked", "reason" => "unauthenticated" },
+                      "error" => { "code" => "unauthenticated", "message" => "Sign in first." } }.freeze
+
+  # Runs the block like a deploy without TQ_API_KEY / TQ_API_SECRET; returns what Touchque.logger got.
+  def without_keys
+    saved = ENV.to_h.slice("TQ_API_KEY", "TQ_API_SECRET")
+    ENV.delete("TQ_API_KEY")
+    ENV.delete("TQ_API_SECRET")
+    Touchque.configure(base_url: api.base_url)
+    Touchque::Guard.unconfigured_logged = false
+    lines = []
+    Touchque.logger = Object.new.tap { |l| l.define_singleton_method(:error) { |m| lines << m } }
+    yield
+    lines
+  ensure
+    Touchque.logger = nil
+    saved.each { |name, value| ENV[name] = value }
+    Touchque.configure(api_key: "tq_test_key", api_secret: "test_secret", base_url: api.base_url)
+  end
+
+  def shaped(shape)
+    ShapedTransfersController.shape = shape
+    ShapedTransfersController.refusals = []
+  end
+
+  def test_missing_keys_answer_500_misconfigured_and_the_action_never_runs
+    TRANSFERS_RAN.clear
+    lines = without_keys do
+      header "X-User", "ada@acme.com"
+      2.times do
+        post "/transfer", { amount: "250 EUR" }
+        assert_equal [500, MISCONFIGURED], [last_response.status, json]
+        assert_equal "no-store", last_response.headers["Cache-Control"]
+        assert_match %r{\Aapplication/json}, last_response.headers["Content-Type"]
+      end
+      header "X-User", nil
+      post "/transfer", { amount: "250 EUR" }
+      assert_equal [401, UNAUTHENTICATED], [last_response.status, json]
+    end
+    assert_empty TRANSFERS_RAN, "the protected action must never run"
+    assert_equal ["[Touchque] TQ_API_KEY and TQ_API_SECRET are not set: routes guarded by Touchque answer 500 misconfigured."], lines
+  end
+
+  def test_missing_keys_go_through_error_body
+    shaped(->(r) { { error: r[:code], status: r[:status] } })
+    without_keys do
+      header "X-User", "ada@acme.com"
+      post "/shaped"
+      assert_equal [500, { "error" => "misconfigured", "status" => 500, "touchque" => MISCONFIGURED["touchque"] }], [last_response.status, json]
+    end
+  end
+
+  def test_error_body_shapes_refusals_and_keeps_the_step
+    shaped(->(r) { { message: r[:message], code: r[:code] } })
+    api.link("shape@acme.com")
+    header "X-User", "shape@acme.com"
+    post "/shaped"
+    assert_equal [202, "waiting"], [last_response.status, json["touchque"]["state"]]
+    assert_empty ShapedTransfersController.refusals, "never called for a 202 step"
+    header Touchque::Guard::TOKEN_HEADER, json["token"]
+    api.reject
+    post "/shaped"
+    assert_equal 403, last_response.status
+    assert_equal %w[message code touchque], json.keys, "no token is added"
+    assert_equal ["The approval was rejected.", "rejected", "rejected"], [json["message"], json["code"], json["touchque"]["state"]]
+    assert_equal "no-store", last_response.headers["Cache-Control"]
+    assert_equal [403, "rejected"], ShapedTransfersController.refusals.last.values_at(:status, :code)
+
+    # Status and headers stay: 423 with Retry-After.
+    header Touchque::Guard::TOKEN_HEADER, nil
+    api.opts(frozen: true)
+    post "/shaped"
+    assert_equal [423, "900"], [last_response.status, last_response.headers["Retry-After"]]
+    assert_equal ["Too many rejected approvals. Try again later.", "frozen", 900], [json["message"], json["code"], json["touchque"]["retryAfter"]]
+  end
+
+  def test_error_body_hash_gets_the_step_and_the_sdks_key_wins
+    shaped(->(_) { { error: "login_required", touchque: "mine" } })
+    post "/shaped"
+    assert_equal [401, { "error" => "login_required", "touchque" => UNAUTHENTICATED["touchque"] }], [last_response.status, json]
+  end
+
+  def test_error_body_non_hash_is_sent_as_it_is
+    ["Sign in first", 42, %w[a b], [], nil].each do |value|
+      shaped(->(_) { value })
+      post "/shaped"
+      assert_equal [401, JSON.generate(value)], [last_response.status, last_response.body]
+      assert_match %r{\Aapplication/json}, last_response.headers["Content-Type"]
+    end
+  end
+
+  def test_a_raising_error_body_is_logged_and_the_default_body_sent
+    lines = []
+    Touchque.logger = Object.new.tap { |l| l.define_singleton_method(:error) { |m| lines << m } }
+    shaped(->(_) { raise "template missing" })
+    post "/shaped"
+    assert_equal [401, UNAUTHENTICATED], [last_response.status, json]
+    assert_equal ["[Touchque] errorBody failed: template missing"], lines
+  ensure
+    Touchque.logger = nil
+  end
+
+  def test_answers_of_400_and_above_carry_the_state_headers
+    # Even when error_body sends no "touchque" key, the headers carry the step.
+    shaped(->(_) { "Sign in first" })
+    post "/shaped"
+    assert_equal [401, "blocked", "unauthenticated"], [last_response.status, last_response.headers["X-Touchque-State"], last_response.headers["X-Touchque-Reason"]]
+
+    api.link("headers@acme.com")
+    header "X-User", "headers@acme.com"
+    post "/transfer", { amount: "1" }
+    assert_equal 202, last_response.status
+    assert_nil last_response.headers["X-Touchque-State"], "not on a 202 step"
+    api.opts(frozen: true)
+    post "/transfer", { amount: "1" }
+    assert_equal [423, "frozen", "900"], [last_response.status, last_response.headers["X-Touchque-State"], last_response.headers["Retry-After"]]
+    assert_nil last_response.headers["X-Touchque-Reason"], "no reason, no header"
+  end
+
+  # The relay's POST /login for +user+ (behind the password step, so it offers the linking QR).
+  def login_relay(user, per_user)
+    Touchque::Rack::Relay.new(client: tq, get_user_id: ->(_) { user }, get_login_user: ->(_) { user }, rate_limit: { per_user: per_user, per_ip: 100 })
+  end
+
+  def relay_login(relay, token = nil)
+    env = Rack::MockRequest.env_for("/login", method: "POST", input: "{}", "CONTENT_TYPE" => "application/json")
+    env["HTTP_X_TOUCHQUE_TOKEN"] = token if token
+    status, headers, body = relay.call(env)
+    [status, headers, JSON.parse(body.join)]
+  end
+
+  def pushes_for(user) = api.calls.count { |c| c["path"] == "/login/request" && c["body"]["externalUsername"] == user }
+
+  def test_relay_charges_enroll_token_replays_after_linking
+    relay = login_relay("replayed@acme.com", 5)
+    _, _, first = relay_login(relay)
+    assert_equal "enroll", first["touchque"]["state"]
+    api.link("replayed@acme.com")
+    before = pushes_for("replayed@acme.com")
+    # While the QR is up the old token is a poll; each start it makes is charged like a new attempt.
+    replies = Array.new(12) { relay_login(relay, first["token"]) }
+    assert_equal [202] * 4 + [429] * 8, replies.map(&:first)
+    assert_equal "RATE_LIMITED", replies.last[2]["error"]
+    assert replies.last[1]["retry-after"].to_i.positive?
+    assert_equal 4, pushes_for("replayed@acme.com") - before, "the first attempt and 4 replays fill the budget of 5"
+  end
+
+  def test_relay_never_charges_polls_that_keep_the_qr
+    relay = login_relay("keeper@acme.com", 2)
+    token = relay_login(relay)[2]["token"]
+    10.times do |i|
+      status, _, body = relay_login(relay, token)
+      assert_equal [202, nil], [status, body["touchque"]["enroll"]], "poll #{i}"
+    end
+    # The budget of 2 is still 1 used: the poll that pushes once the phone is linked passes.
+    api.link("keeper@acme.com")
+    status, _, body = relay_login(relay, token)
+    assert_equal [202, "waiting"], [status, body["touchque"]["state"]]
+  end
+
+  def test_relay_charges_an_enroll_qr_renewal_at_the_margin
+    api.opts(secretTtlMs: 10_000) # inside the 15 s margin from the start
+    relay = login_relay("renewer@acme.com", 2)
+    first = relay_login(relay)[2]
+    status, _, renewed = relay_login(relay, first["token"])
+    assert_equal [202, "data:image/png;base64,QR2-renewer@acme.com"], [status, renewed["touchque"]["enroll"]["qrCodeDataUrl"]]
+    status, _, again = relay_login(relay, renewed["token"])
+    assert_equal [429, "RATE_LIMITED"], [status, again["error"]]
+  end
+
+  def test_relay_guard_answers_carry_the_state_headers
+    api.link("refused@acme.com")
+    api.opts(blocked: "geo_policy")
+    status, headers, = relay_login(login_relay("refused@acme.com", 5))
+    assert_equal [403, "blocked", "geo_policy", "no-store"], [status, headers["x-touchque-state"], headers["x-touchque-reason"], headers["cache-control"]]
   end
 
   def test_relay_login_with_a_first_factor

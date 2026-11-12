@@ -3,7 +3,22 @@
 All notable changes to this project will be documented in this file. The
 format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [5.1.0] — 2026-11-12
+
+### Fixed
+- **The first-time QR stays the same while the user scans it.** Every poll with an `enroll` token started again (login request, 404 `device_not_linked`, generate-secret 409, reset), so each 1.5 s poll replaced the QR and the recovery codes on screen and the QR being scanned stopped working. Now:
+  - The enroll step carries `"enroll" => { "expiresAt" }`: the API's `expiresAt` when it is ISO 8601, else now + its `ttlMs`; its token carries that expiry.
+  - A poll with that token reads only the link state (`GET /users/{externalUsername}`). Not linked, with more than 15 s left: 202 `{"touchque":{"state":"enroll","expiresAt":"..."},"token":"..."}` with no `enroll` object, so the page keeps the QR and the recovery codes it shows; no new secret, no push. Linked: the push starts as before. Expired, about to expire, or unknown to Touchque: a new QR comes with `enroll.qrCodeDataUrl`.
+  - `Guard.status_poll?` is true for such a poll while the first-time QR is up (more than 15 s before it expires), so the relay's `POST /login` no longer counts those polls against the per-user limit. Renewing an expiring QR still counts.
+  - Pages on `@touchque/web` need 2.1.0, which keeps the QR it shows for such a step.
+- **A start is always charged.** A first-time QR poll that starts after all (the user linked: the push; the QR expired or is gone: a new QR) calls `Guard.run`'s new `before_start:` first, which may answer instead. The relay's `POST /login` charges it to the username's budget like a new attempt and answers its usual 429 over the limit, so replaying an old enroll token can no longer push on the poll budget.
+- **`require_touchque` answers JSON when `TQ_API_KEY` / `TQ_API_SECRET` are missing.** It raised `Touchque::ConfigError` from `Touchque.client`, so Rails answered its own 500 page. `Touchque.client` is now built inside the guard's error handling on the request, and kept once built. Without keys the action answers 500 `misconfigured` with `Cache-Control: no-store` (401 `unauthenticated` when nobody is signed in) and never runs; it is logged once through `Touchque.logger`: `[Touchque] TQ_API_KEY and TQ_API_SECRET are not set: routes guarded by Touchque answer 500 misconfigured.`
+
+### Added
+- **`error_body:` for `require_touchque`: refusals in your API's own error shape.** `require_touchque "SEND_MONEY", error_body: ->(r) { { message: r[:message], code: r[:code] } }` (a proc run in the controller, or a method name). It is called for every answer of 400 and above (401, 403, 408, 423, 429, 500, 503), never for a 202 step or an approval, with the refusal `{ status:, code:, message:, touchque: }` (a copy of the step). What the result encodes to as JSON decides: a JSON object (a Hash, a Struct or Data, an object with `to_hash` or whose `as_json` is a Hash) is sent with `"touchque"` set to the step (the SDK's key wins, no `token` is added); anything else as it is, as JSON. Status and headers stay the same. One that raises, or a result that cannot be encoded, is logged (`[Touchque] errorBody failed: <message>`) and the default body sent.
+- **Refusal headers.** Every guard answer of 400 and above, from `require_touchque` and the relay, carries `X-Touchque-State` and, when the step has a reason, `X-Touchque-Reason`; `@touchque/web` 2.1.0 reads the step from them when the body has no `touchque` key. Cross-origin pages must expose them (`Access-Control-Expose-Headers`). `Touchque::Guard.headers(result)` gives them, with `Cache-Control` and `Retry-After`, for your own action.
+- `Touchque::Guard.refusal(result)`, and `Touchque::Guard.error_body(result, callable)` for the same shape in your own action (JSON text; the default body, logged, when the callable raises); `Touchque::Guard.default_client` (`Touchque.client`, or `nil` when it cannot be built, logged once), `Touchque::Guard.unauthenticated` and `Touchque::Guard.misconfigured`, the guard's 401 and 500 answers.
+- README: "Guard inside your handler" (`Touchque::Guard.run` after your own checks, what to send back, the 202 and first-time QR polls, `before_start:` for your own rate limits), the `error_body:` option, the refusal headers and what a missing key answers.
 
 ## [5.0.0] — 2026-11-12
 

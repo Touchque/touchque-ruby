@@ -221,17 +221,25 @@ module Touchque
       details = @get_details&.call(ctx[:req])
       proof = Guard.silent_on?(@silent_sign_in) ? Guard.presence(ctx[:header].call(Guard::BROWSER_HEADER)) : nil
       # Polling an approval already sent is not a new attempt: its own, larger per-IP budget.
-      limited = if Guard.status_poll?(@tq, user, @action_type, details: details, token: input[:token], offline: input[:offline], code: input[:code])
-                  allow(ctx, "login-poll", nil, POLLS_PER_ATTEMPT)
-                else
-                  allow(ctx, "login", user)
-                end
+      poll = Guard.status_poll?(@tq, user, @action_type, details: details, token: input[:token], offline: input[:offline], code: input[:code])
+      limited = poll ? allow(ctx, "login-poll", nil, POLLS_PER_ATTEMPT) : allow(ctx, "login", user)
       return limited if limited
 
+      # A first-time QR poll that starts after all (the user linked, or the QR is gone) is
+      # charged like a new attempt: a replayed token must not push on the poll budget.
+      refused = nil
+      before_start = if poll
+                       lambda do
+                         refused = allow(ctx, "login", user)
+                         refused && { status: refused.status, body: refused.body }
+                       end
+                     end
       result = Guard.run(@tq, user, @action_type, details: details, ip: ctx[:ip].empty? ? nil : ctx[:ip], user_agent: ctx[:user_agent],
                                                   token: input[:token], offline: input[:offline], code: input[:code], code_type: input[:code_type],
                                                   # Pre-auth: a typed username proves nothing, so no linking QR unless get_login_user ties this route to the password step.
-                                                  enroll: !@get_login_user.nil?, browser_proof: proof, silent_sign_in: @silent_sign_in)
+                                                  enroll: !@get_login_user.nil?, browser_proof: proof, silent_sign_in: @silent_sign_in,
+                                                  before_start: before_start)
+      return refused if refused
       return guard_response(result) unless result[:approved]
 
       approved = result[:approved]
@@ -248,11 +256,11 @@ module Touchque
       end
     end
 
+    # A guard answer that is not an approval, with Guard.headers (no-store, Retry-After, X-Touchque-State / -Reason).
     def guard_response(result)
       res = RelayResponse.new(result[:status], result[:body])
-      retry_after = result[:body].dig("touchque", "retryAfter")
-      res.set_header("Retry-After", retry_after) if retry_after
-      res.set_header("Cache-Control", "no-store")
+      Guard.headers(result).each { |name, value| res.set_header(name, value) }
+      res
     end
 
     # The username used for on_authenticated is the one Touchque returns for the code, never the body's.

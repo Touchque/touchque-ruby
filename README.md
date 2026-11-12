@@ -64,12 +64,60 @@ again with header `X-Touchque-Token: <token>`; [`@touchque/web`](https://www.npm
 does this loop for you. Once approved the action runs **once**. Refusals answer 403 (rejected,
 blocked), 408 (expired), 423 (frozen) or 429 (rate limited) with `Retry-After`.
 
+A frontend of your own: while the first-time QR is up, polls answer `{"state": "enroll", "expiresAt": ...}`
+without `enroll`, so keep showing the QR you have; a new one comes with `enroll.qrCodeDataUrl`.
+
 The approving user is `current_user`'s email (else id, else username). For your login action
 (nobody is signed in yet) pass `user: -> { session[:password_verified_user] }`.
 
 **The end user's address.** The risk checks (Tor, location, impossible travel) and the location
 shown on the phone use `request.remote_ip`: configure `config.action_dispatch.trusted_proxies`
 behind a load balancer.
+
+**A missing key.** `Touchque.client` is built on the first guarded request, inside the guard.
+Without `TQ_API_KEY` / `TQ_API_SECRET` (or `config.touchque`) nothing raises: the action answers
+**500** with `Cache-Control: no-store` and the body
+`{"touchque":{"state":"blocked","reason":"misconfigured"},"error":{"code":"misconfigured","message":"Two-factor approval is not configured correctly."}}`
+(401 `unauthenticated` when nobody is signed in), and never runs. It is logged once, through
+`Touchque.logger`: `[Touchque] TQ_API_KEY and TQ_API_SECRET are not set: routes guarded by Touchque
+answer 500 misconfigured.` A 500 rather than a 503: it is a deploy mistake for your monitoring to
+catch, not an outage to retry. `@touchque/web` shows "Approvals are not set up correctly on this site."
+
+**Refusal headers.** Every answer of 400 and above carries `X-Touchque-State: <state>`, plus
+`X-Touchque-Reason: <reason>` when the step has one; `@touchque/web` 2.1.0 reads the step from them when
+the body has no `touchque` key. A frontend on another origin must list them in
+`Access-Control-Expose-Headers`.
+
+### Your own error shape (`error_body:`)
+
+Refusals (403, 408, 423, 429) answer `{"touchque": step, "token": "..."}`; the guard's own errors (401,
+500, 503) answer `{"touchque": step, "error": {"code", "message"}}`. To answer in your API's own error
+shape, pass `error_body:`:
+
+```ruby
+require_touchque "SEND_MONEY", only: :create,
+                 error_body: ->(r) { { message: r[:message], code: r[:code] } }
+```
+
+It is called for every answer of 400 and above (401, 403, 408, 423, 429, 500, 503), never for a 202
+step or an approval, with the refusal, a Hash:
+
+- `status:`;
+- `code:`: the error's code, else the step's `reason`, else its `state`;
+- `message:`: the error's message, else by state: "The approval was rejected.", "The approval expired.
+  Try again.", "Too many rejected approvals. Try again later." (`frozen`), "Too many attempts. Try again
+  later." (`rate_limited`), "The approval was refused." (anything else);
+- `touchque:`: the step as it would be sent.
+
+The proc runs in the controller (`request` and `t(...)` work there), or name a method:
+`error_body: :touchque_error`. What the result encodes to as JSON decides. A JSON object (a Hash, a
+Struct or Data, an object with `to_hash` or whose `as_json` is a Hash) is sent with `"touchque"` set to
+the step, replacing yours, so `@touchque/web` still sees the state: 403
+`{"message":"The approval was rejected.","code":"rejected","touchque":{"state":"rejected",...}}`. No
+`token` is added. Anything else (a String, a number, an Array, `nil`) is sent as it is, as JSON. The
+proc gets a copy of the step. The status and the headers stay the same (JSON, `Cache-Control: no-store`,
+`Retry-After`, `X-Touchque-State`). One that raises, or a result that cannot be encoded, is logged
+(`[Touchque] errorBody failed: <message>`) and the default body is sent.
 
 ## Action types
 
@@ -86,6 +134,58 @@ The guard refuses what is not ready. A name that is not defined is a setup error
 turned off in the dashboard answers 403 with `reason: "action_disabled"`, which stops that kind of
 approval at once, without a deploy.
 
+## Guard inside your handler
+
+When your own checks come first (the balance, who owns the account), run the guard in your action,
+after them, with `Touchque::Guard.run`: the same two-phase contract as `require_touchque`, for Rails,
+Sinatra, Hanami or plain Rack.
+
+```ruby
+def create
+  # Your checks first, on every request (each poll comes back through them).
+  account = current_user.accounts.find(params.require(:from))
+  return render(json: { error: "insufficient_funds" }, status: 422) if account.balance < amount
+
+  input = Touchque::Guard.input_from_headers(->(name) { request.headers[name] })
+  result = Touchque::Guard.run(
+    Touchque.client, current_user.email, "SEND_MONEY",
+    details: { "Amount" => "#{amount} EUR", "To" => account.iban }, # shown on the phone, bound to the approval
+    ip: request.remote_ip, user_agent: request.user_agent, **input
+  )
+  if result[:approved]
+    Transfers.send!(account, amount) # approved: runs once
+    return render(json: { sent: true })
+  end
+
+  # Cache-Control: no-store, Retry-After on 423 / 429, X-Touchque-State (and -Reason) on 400 and above
+  Touchque::Guard.headers(result).each { |name, value| response.headers[name] = value }
+  render json: result[:body], status: result[:status]
+end
+```
+
+- **202** `{"touchque": step, "token": "..."}`: show the step and send the same request again with
+  `X-Touchque-Token: <token>` until it is approved (`@touchque/web` does this loop).
+- **200** with `result[:approved]`: run the action once. The approval is used up there: the same token
+  never approves twice.
+- **401, 403, 408, 423, 429, 500, 503**: send `status` and `body` as they are, with
+  `Touchque::Guard.headers(result)`: `Cache-Control: no-store`, `Retry-After` on 423 and 429,
+  `X-Touchque-State` and `X-Touchque-Reason`. For your own error shape,
+  `render json: Touchque::Guard.error_body(result, callable), status: result[:status]` sends what
+  `error_body:` would: it returns JSON text, and the default body (logged) when the callable raises.
+- **First-time QR**: a user with no phone linked gets the step `enroll` with
+  `enroll.qrCodeDataUrl`, the recovery codes and `enroll.expiresAt`. While the first-time QR is up,
+  polls answer `{state: "enroll", expiresAt}` without `enroll`: keep showing the QR you have. A new QR
+  comes with `enroll.qrCodeDataUrl` when the old one expired. Pages on `@touchque/web` need 2.1.0.
+- **Rate limits**: `Touchque::Guard.status_poll?` tells a poll from a new attempt (a poll only reads the
+  status). If you count attempts per user, pass `Touchque::Guard.run` `before_start:`, a callable it calls
+  when a first-time QR poll starts after all (the user linked, or the QR expired), to charge that start;
+  return a result to answer instead, or nil or false to go on (anything else answers 503). The relay does
+  this for `POST /login`.
+
+`Touchque.client` raises `Touchque::ConfigError` when a key is missing. `Touchque::Guard.default_client`
+returns `nil` instead (and logs it once), and `Touchque::Guard.misconfigured` is the 500 answer
+`require_touchque` sends then.
+
 ## The three primitives (any framework)
 
 ```ruby
@@ -97,7 +197,7 @@ approval = tq.complete(step["requestId"], "jane@acme.com", "SEND_MONEY", details
 ```
 
 `Touchque::Guard.run(tq, user, action, token:, offline:, code:, ...)` is the whole two-phase
-contract for Sinatra, Hanami or plain Rack.
+contract for Sinatra, Hanami or plain Rack: see "Guard inside your handler".
 
 ## Waiting in one call
 
@@ -129,8 +229,11 @@ Routes: `POST /login`, `/enroll/start`, `GET /enroll/status`, `/offline/challeng
 `/passkey/authenticate/options|verify`, `/passkey/login/options|verify`,
 `/passkey/register/options|verify`, `GET /passkey/credentials`, `DELETE /passkey/credentials/:id`.
 Pre-auth routes are rate limited (20 per IP, 5 per username a minute; pass `rate_limit: { store: }`
-for Redis across processes). The offline routes stay off until `get_login_user` is set. Adding a
-passkey for a user with a linked phone waits for the phone first.
+for Redis across processes). Polls of an approval on its way have their own per-IP budget; a
+first-time QR poll that starts after all (the user linked, or the QR expired) counts against the
+username's budget like a new attempt. Guard answers of 400 and above carry `X-Touchque-State` (and
+`X-Touchque-Reason`). The offline routes stay off until `get_login_user` is set. Adding a passkey for a
+user with a linked phone waits for the phone first.
 
 ## Webhooks
 

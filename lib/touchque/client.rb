@@ -12,6 +12,9 @@ module Touchque
   #
   # Thread-safe: create one and reuse it (in Rails, Touchque.client).
   class Client
+    # @api private: the ConfigError message for a missing key or secret.
+    MISSING_KEYS = "Set TQ_API_KEY and TQ_API_SECRET (or pass api_key: and api_secret:)."
+
     attr_reader :auth, :login, :webauthn, :webhook, :offline, :action_types, :actions, :risk, :recovery,
                 :assist, :agents, :identity, :mobile, :qr_pairings, :device_risk, :safe_guard
 
@@ -21,9 +24,7 @@ module Touchque
       api_key ||= ENV.fetch("TQ_API_KEY", nil)
       api_secret ||= ENV.fetch("TQ_API_SECRET", nil)
       base_url ||= ENV["TQ_API_URL"].to_s.empty? ? DEFAULT_BASE_URL : ENV.fetch("TQ_API_URL")
-      if api_key.to_s.empty? || api_secret.to_s.empty?
-        raise ConfigError, "Set TQ_API_KEY and TQ_API_SECRET (or pass api_key: and api_secret:)."
-      end
+      raise ConfigError, MISSING_KEYS if api_key.to_s.empty? || api_secret.to_s.empty?
       raise ConfigError, "api_key must start with \"tq_\". Did you accidentally swap api_key and api_secret?" unless api_key.start_with?("tq_")
 
       Util.assert_safe_url!(base_url, "base_url")

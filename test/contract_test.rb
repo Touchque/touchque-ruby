@@ -298,4 +298,181 @@ class ContractTest < FakeApiTest
     assert_equal "2026-10-25T09:30:00.000Z", api.last_call["body"]["securityChanges"]["mfa"]
     assert_equal [false, "same_start_and_end"], [res["destination"]["known"], res["destination"]["lookalike"][0]["reason"]]
   end
+
+  # First-time QR: one per enrollment, not one per poll.
+
+  def calls_since(from) = api.calls.drop(from).map { |c| "#{c["method"]} #{c["path"]}" }
+
+  def test_an_enroll_poll_keeps_the_qr_without_a_new_secret
+    user = "enroll-keep@acme.com"
+    client = tq
+    first = Touchque::Guard.run(client, user, "LOGIN")
+    qr = step(first)["enroll"]
+    assert_equal [202, "data:image/png;base64,QR-#{user}", ["r1"]], [first[:status], qr["qrCodeDataUrl"], qr["recoveryCodes"]]
+    expires_at = Touchque::Steps.iso_ms(qr["expiresAt"])
+    refute_nil expires_at, "the API's ISO 8601 expiresAt is kept"
+    assert Touchque::Guard.status_poll?(client, user, "LOGIN", token: token(first))
+
+    from = api.calls.length
+    poll = Touchque::Guard.run(client, user, "LOGIN", token: token(first))
+    assert_equal 202, poll[:status]
+    # No "enroll": the page keeps the QR and the recovery codes it shows.
+    assert_equal({ "state" => "enroll", "expiresAt" => Touchque::Steps.iso_of(expires_at) }, step(poll))
+    # Only the link state is read: no new secret, no reset, no push.
+    assert_equal ["GET /users/enroll-keep%40acme.com"], calls_since(from)
+
+    again = Touchque::Guard.run(client, user, "LOGIN", token: token(poll))
+    assert_equal step(poll), step(again)
+    assert Touchque::Guard.status_poll?(client, user, "LOGIN", token: token(poll))
+    refute Touchque::Guard.status_poll?(client, user, "SEND_MONEY", token: token(poll))
+    refute Touchque::Guard.status_poll?(client, "other@acme.com", "LOGIN", token: token(poll))
+  end
+
+  def test_linking_during_the_enroll_poll_sends_the_push
+    first = guard("enroll-link@acme.com")
+    assert_equal "enroll", step(first)["state"]
+    api.link("enroll-link@acme.com")
+    poll = guard("enroll-link@acme.com", token: token(first))
+    assert_equal [202, "waiting"], [poll[:status], step(poll)["state"]]
+    refute_nil step(poll)["requestId"]
+  end
+
+  def test_an_enroll_qr_close_to_its_expiry_is_replaced
+    api.opts(secretTtlMs: 10_000) # less than the 15 s the guard keeps in hand
+    first = guard("enroll-short@acme.com")
+    assert_equal "data:image/png;base64,QR-enroll-short@acme.com", step(first)["enroll"]["qrCodeDataUrl"]
+    poll = guard("enroll-short@acme.com", token: token(first))
+    assert_equal [202, "enroll"], [poll[:status], step(poll)["state"]]
+    assert_equal ["data:image/png;base64,QR2-enroll-short@acme.com", ["r2"]], step(poll)["enroll"].values_at("qrCodeDataUrl", "recoveryCodes")
+  end
+
+  def test_an_enroll_token_is_a_status_poll_only_while_the_qr_is_up
+    api.opts(secretTtlMs: 60_000) # 45 s before the 15 s margin
+    up = guard("enroll-up@acme.com")
+    assert Touchque::Guard.status_poll?(tq, "enroll-up@acme.com", "LOGIN", token: token(up))
+    api.opts(secretTtlMs: 10_000) # inside the margin: the next poll renews the QR
+    expiring = guard("enroll-expiring@acme.com")
+    refute Touchque::Guard.status_poll?(tq, "enroll-expiring@acme.com", "LOGIN", token: token(expiring))
+  end
+
+  def test_before_start_runs_only_when_an_enroll_poll_starts_after_all
+    client = tq
+    calls = 0
+    refused = { status: 429, body: { "error" => "RATE_LIMITED" } }
+    refuse = lambda {
+      calls += 1
+      refused
+    }
+    go_on = lambda {
+      calls += 1
+      nil
+    }
+    run = ->(user, tok, hook) { Touchque::Guard.run(client, user, "LOGIN", token: tok, before_start: hook) }
+
+    first = run.call("enroll-hook@acme.com", nil, refuse)
+    keep = run.call("enroll-hook@acme.com", token(first), refuse)
+    assert_equal ["enroll", nil], [step(keep)["state"], step(keep)["enroll"]]
+    assert_equal 0, calls, "never for a first attempt or a poll that keeps the QR"
+
+    # Linked: the poll would push. The hook answers instead, and nothing starts.
+    api.link("enroll-hook@acme.com")
+    from = api.calls.length
+    assert_equal refused, run.call("enroll-hook@acme.com", token(first), refuse)
+    assert_equal ["GET /users/enroll-hook%40acme.com"], calls_since(from)
+    assert_equal "waiting", step(run.call("enroll-hook@acme.com", token(first), go_on))["state"]
+    assert_equal 2, calls
+
+    # A QR inside the margin would be renewed: the hook comes first there too.
+    api.opts(secretTtlMs: 10_000)
+    first = run.call("enroll-renew@acme.com", nil, refuse)
+    from = api.calls.length
+    assert_equal refused, run.call("enroll-renew@acme.com", token(first), refuse)
+    assert_equal ["GET /users/enroll-renew%40acme.com"], calls_since(from), "no new secret"
+    renewed = run.call("enroll-renew@acme.com", token(first), go_on)
+    assert_equal "data:image/png;base64,QR2-enroll-renew@acme.com", step(renewed)["enroll"]["qrCodeDataUrl"]
+    assert_equal 4, calls
+  end
+
+  def test_a_before_start_answer_that_is_no_result_fails_closed
+    client = tq
+    first = Touchque::Guard.run(client, "enroll-hook-bad@acme.com", "LOGIN")
+    api.link("enroll-hook-bad@acme.com")
+    [true, "refused", { "error" => "RATE_LIMITED" }, { status: 429 }].each do |bad|
+      from = api.calls.length
+      res = Touchque::Guard.run(client, "enroll-hook-bad@acme.com", "LOGIN", token: token(first), before_start: -> { bad })
+      assert_equal [503, "unavailable"], [res[:status], step(res)["reason"]], bad.inspect
+      assert_equal ["GET /users/enroll-hook-bad%40acme.com"], calls_since(from), "nothing started for #{bad.inspect}"
+    end
+    # false goes on, like nil.
+    going = Touchque::Guard.run(client, "enroll-hook-bad@acme.com", "LOGIN", token: token(first), before_start: -> { false })
+    assert_equal "waiting", step(going)["state"]
+  end
+
+  ErrorShape = Struct.new(:message, :code)
+
+  def test_error_body_is_decided_by_what_it_encodes_to
+    result = Touchque::Guard.unauthenticated
+    step = result[:body]["touchque"]
+    shape = ->(value) { JSON.parse(Touchque::Guard.error_body(result, ->(_) { value })) }
+    hashy = Object.new.tap { |o| o.define_singleton_method(:to_hash) { { "message" => "to_hash" } } }
+    as_json = Object.new.tap { |o| o.define_singleton_method(:as_json) { |*| { "message" => "as_json" } } }
+
+    assert_equal({ "message" => "m", "code" => "c", "touchque" => step }, shape.call(ErrorShape.new("m", "c")))
+    assert_equal({ "message" => "to_hash", "touchque" => step }, shape.call(hashy))
+    assert_equal({ "message" => "as_json", "touchque" => step }, shape.call(as_json))
+    if defined?(::Data)
+      data = Data.define(:message).new(message: "data")
+      assert_equal({ "message" => "data", "touchque" => step }, shape.call(data))
+    end
+    assert_equal ["Sign in first", nil, %w[a b]], ["Sign in first", nil, %w[a b]].map { |v| shape.call(v) }
+  end
+
+  def test_error_body_gets_a_copy_of_the_step_and_falls_back_on_failure
+    lines = []
+    Touchque.logger = Object.new.tap { |l| l.define_singleton_method(:error) { |m| lines << m } }
+    result = Touchque::Guard.unauthenticated
+    original = Touchque::Util.deep_copy(result[:body])
+    edit = lambda { |r|
+      r[:touchque]["state"] = "approved"
+      r[:touchque].delete("reason")
+      r[:code] << "!"
+    }
+    shaped = Touchque::Guard.error_body(result, ->(r) { edit.call(r) && { code: r[:code] } })
+    assert_equal({ "code" => "unauthenticated!", "touchque" => original["touchque"] }, JSON.parse(shaped))
+    assert_equal original, result[:body], "the answer is never changed"
+
+    assert_equal original, JSON.parse(Touchque::Guard.error_body(result, ->(r) { edit.call(r) && raise("boom") }))
+    assert_equal original, JSON.parse(Touchque::Guard.error_body(result, ->(_) { { "message" => "\xB1" } }))
+    assert_equal "[Touchque] errorBody failed: boom", lines[0]
+    assert_match(/\A\[Touchque\] errorBody failed: ./, lines[1], "a result that cannot be encoded")
+  ensure
+    Touchque.logger = nil
+  end
+
+  def test_an_enroll_step_without_a_qr_is_no_status_poll
+    client = tq
+    # enroll: false (a pre-auth relay): "not linked", no QR, so no expiry in the token.
+    res = Touchque::Guard.run(client, "enroll-none@acme.com", "LOGIN", enroll: false)
+    assert_equal({ "state" => "enroll" }, step(res))
+    refute Touchque::Guard.status_poll?(client, "enroll-none@acme.com", "LOGIN", token: token(res))
+  end
+
+  def test_the_enroll_expiry_comes_from_ttl_ms_when_the_api_sends_no_date
+    client = Touchque::Client.new(api_key: "tq_k", api_secret: "s", base_url: "http://127.0.0.1:9")
+    client.login.define_singleton_method(:request) { |*, **| raise Touchque::APIError.new(404, { "code" => "device_not_linked" }) }
+    answers = [{ "qrCodeDataUrl" => "data:image/png;base64,QR", "expiresAt" => "soon", "ttlMs" => 60_000 },
+               { "qrCodeDataUrl" => "data:image/png;base64,QR", "expiresAt" => "soon" }]
+    client.auth.define_singleton_method(:generate_secret) { |_user| answers.shift }
+
+    now = Touchque::Util.now_ms
+    with_ttl = Touchque::Guard.run(client, "ttl@acme.com", "LOGIN")
+    expires_at = Touchque::Steps.iso_ms(step(with_ttl)["enroll"]["expiresAt"])
+    assert_includes (now + 60_000)...(now + 65_000), expires_at
+    assert Touchque::Guard.status_poll?(client, "ttl@acme.com", "LOGIN", token: token(with_ttl))
+
+    # Neither a date nor a lifetime: no expiry, and polls start again as before.
+    none = Touchque::Guard.run(client, "ttl@acme.com", "LOGIN")
+    refute step(none)["enroll"].key?("expiresAt")
+    refute Touchque::Guard.status_poll?(client, "ttl@acme.com", "LOGIN", token: token(none))
+  end
 end

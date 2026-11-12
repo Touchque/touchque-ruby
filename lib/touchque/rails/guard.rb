@@ -20,17 +20,38 @@ module Touchque
     # 423 / 429 with Retry-After. Options: user: (default: current_user's email, id or
     # username; for your login action, whoever just passed your password check), details:,
     # reference_id:, context: (procs run in the controller, or method names),
-    # silent_sign_in: (true or { max_age_seconds: }), enroll:, and before_action's
-    # only: / except: / if: / unless:.
+    # silent_sign_in: (true or { max_age_seconds: }), enroll:, error_body:, and
+    # before_action's only: / except: / if: / unless:.
+    #
+    # Every answer of 400 and above carries X-Touchque-State (and X-Touchque-Reason when the
+    # step has a reason).
+    #
+    # error_body: your own error shape for every answer of 400 and above (never a 202 step,
+    # never an approval): a proc run in the controller, or a method name, given the refusal
+    # ({ status:, code:, message:, touchque: }, with a copy of the step). What it encodes to
+    # decides: a JSON object (a Hash, Struct, Data...) is sent with "touchque" set to the
+    # step; anything else as it is. Status and headers stay; one that raises, or a result
+    # that cannot be encoded, is logged and the default body sent.
+    #
+    #   require_touchque "SEND_MONEY", error_body: ->(r) { { message: r[:message], code: r[:code] } }
+    #
+    # Touchque.client is built on the first request: without TQ_API_KEY / TQ_API_SECRET the
+    # action answers 500 misconfigured (401 without a signed-in user) and never runs.
     module Guard
       def self.included(base)
         base.extend(ClassMethods)
       end
 
       module ClassMethods
-        def require_touchque(action, user: nil, details: nil, reference_id: nil, context: nil, silent_sign_in: false, enroll: true, **filter_options)
+        def require_touchque(action, user: nil, details: nil, reference_id: nil, context: nil, silent_sign_in: false, enroll: true,
+                             error_body: nil, **filter_options)
           Touchque::Guard.assert_silent_sign_in!(silent_sign_in, "require_touchque")
-          options = { user: user, details: details, reference_id: reference_id, context: context, silent_sign_in: silent_sign_in, enroll: enroll }
+          unless error_body.nil? || error_body.is_a?(Symbol) || error_body.respond_to?(:call)
+            raise ArgumentError, "require_touchque: error_body must be a proc, a method name or respond to call."
+          end
+
+          options = { user: user, details: details, reference_id: reference_id, context: context, silent_sign_in: silent_sign_in,
+                      enroll: enroll, error_body: error_body }
           before_action(**filter_options) { touchque_guard!(action, options) }
         end
       end
@@ -43,25 +64,44 @@ module Touchque
       private
 
       def touchque_guard!(action, options)
-        header = ->(name) { request.headers[name] }
-        input = Touchque::Guard.input_from_headers(header)
-        silent = options[:silent_sign_in]
-        result = Touchque::Guard.run(
-          Touchque.client, touchque_value(options[:user]) || touchque_default_user, action,
-          details: touchque_value(options[:details]), reference_id: touchque_value(options[:reference_id]),
-          ip: request.remote_ip, user_agent: request.user_agent, token: input[:token], offline: input[:offline],
-          code: input[:code], code_type: input[:code_type], enroll: options[:enroll],
-          browser_proof: Touchque::Guard.silent_on?(silent) ? header.call(Touchque::Guard::BROWSER_HEADER) : nil,
-          silent_sign_in: silent, context: touchque_value(options[:context])
-        )
+        user = touchque_value(options[:user]) || touchque_default_user
+        client = Touchque::Guard.default_client
+        result = if client.nil?
+                   # No client (TQ_API_KEY / TQ_API_SECRET missing): an answer, never an exception.
+                   user.to_s.empty? ? Touchque::Guard.unauthenticated : Touchque::Guard.misconfigured
+                 else
+                   header = ->(name) { request.headers[name] }
+                   input = Touchque::Guard.input_from_headers(header)
+                   silent = options[:silent_sign_in]
+                   Touchque::Guard.run(
+                     client, user, action,
+                     details: touchque_value(options[:details]), reference_id: touchque_value(options[:reference_id]),
+                     ip: request.remote_ip, user_agent: request.user_agent, token: input[:token], offline: input[:offline],
+                     code: input[:code], code_type: input[:code_type], enroll: options[:enroll],
+                     browser_proof: Touchque::Guard.silent_on?(silent) ? header.call(Touchque::Guard::BROWSER_HEADER) : nil,
+                     silent_sign_in: silent, context: touchque_value(options[:context])
+                   )
+                 end
         if result[:approved]
           request.env["touchque.approval"] = result[:approved]
           return
         end
-        response.headers["Cache-Control"] = "no-store"
-        retry_after = result[:body].dig("touchque", "retryAfter")
-        response.headers["Retry-After"] = retry_after.to_s if retry_after
-        render json: result[:body], status: result[:status]
+        Touchque::Guard.headers(result).each { |name, value| response.headers[name] = value }
+        render json: touchque_body(result, options[:error_body]), status: result[:status]
+      end
+
+      # The guard's body, or error_body's (JSON text; the default body when it fails) for an
+      # answer of 400 and above.
+      def touchque_body(result, error_body)
+        return result[:body] if error_body.nil? || result[:status] < 400
+
+        Touchque::Guard.error_body(result, lambda { |refusal|
+          case error_body
+          when Proc then instance_exec(refusal, &error_body)
+          when Symbol then send(error_body, refusal)
+          else error_body.call(refusal)
+          end
+        })
       end
 
       def touchque_value(option)
