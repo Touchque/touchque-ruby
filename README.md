@@ -17,9 +17,6 @@ Ruby 3.1+, no runtime dependencies beyond the standard library (`net/http`, `ope
 gem "touchque"
 ```
 
-> **Not on RubyGems yet.** Until it is, take it from GitHub:
-> `gem "touchque", git: "https://github.com/Touchque/touchque-ruby"`.
-
 ## Setup
 
 Get an API key and secret from your [Touchque dashboard](https://dashboard.touchque.com):
