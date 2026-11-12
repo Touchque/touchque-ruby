@@ -5,7 +5,7 @@ format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [5.0.0] — Unreleased
+## [5.0.0] — 2026-11-12
 
 ### Breaking
 - **Every name is spelled Touchque instead of TouchQue.** Code that uses the old names must be updated; nothing else changes. Old → new:
