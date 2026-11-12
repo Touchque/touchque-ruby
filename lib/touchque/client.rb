@@ -28,7 +28,7 @@ module Touchque
       raise ConfigError, "api_key must start with \"tq_\". Did you accidentally swap api_key and api_secret?" unless api_key.start_with?("tq_")
 
       Util.assert_safe_url!(base_url, "base_url")
-      @http = HTTP.new(api_key: api_key, api_secret: api_secret, base_url: base_url.chomp("/"), timeout: timeout)
+      @http = transport(api_key: api_key, api_secret: api_secret, base_url: base_url.chomp("/"), timeout: timeout)
       @auth = Resources::Auth.new(@http)
       @login = Resources::Login.new(@http)
       @webauthn = Resources::WebAuthn.new(@http)
@@ -77,6 +77,13 @@ module Touchque
     def protect(user, type: "LOGIN", **options)
       login.verify(user, type: type, **options)
       yield
+    end
+
+    private
+
+    # What every resource calls the API through (Touchque::Testing::FakeTouchque answers in memory).
+    def transport(**options)
+      HTTP.new(**options)
     end
   end
 end

@@ -449,12 +449,249 @@ class ContractTest < FakeApiTest
     Touchque.logger = nil
   end
 
-  def test_an_enroll_step_without_a_qr_is_no_status_poll
+  def test_enroll_false_says_why_and_is_no_status_poll
     client = tq
     # enroll: false (a pre-auth relay): "not linked", no QR, so no expiry in the token.
     res = Touchque::Guard.run(client, "enroll-none@acme.com", "LOGIN", enroll: false)
-    assert_equal({ "state" => "enroll" }, step(res))
+    assert_equal [202, { "state" => "enroll", "reason" => "enrollment_off" }], [res[:status], step(res)]
     refute Touchque::Guard.status_poll?(client, "enroll-none@acme.com", "LOGIN", token: token(res))
+    # A 202 step, not a refusal: no state headers.
+    assert_equal({ "content-type" => "application/json; charset=utf-8", "cache-control" => "no-store" }, Touchque::Guard.response(res)[1])
+  end
+
+  # Waiting polls repeat expiresAt.
+
+  def claims(res) = Touchque::Steps.verify_guard_token("test_secret", token(res))
+
+  def test_waiting_polls_carry_the_requests_expires_at
+    user = "expiry-poll@acme.com"
+    api.link(user)
+    first = guard(user)
+    rx = Touchque::Steps.iso_ms(step(first)["expiresAt"])
+    refute_nil rx
+    assert_equal rx, claims(first)["rx"], "the token carries the request's expiry"
+    expires_at = Touchque::Steps.iso_of(rx)
+
+    second = guard(user, token: token(first))
+    third = guard(user, token: token(second))
+    [second, third].each do |answer|
+      assert_equal [202, "waiting", expires_at], [answer[:status], step(answer)["state"], step(answer)["expiresAt"]]
+      assert_equal rx, claims(answer)["rx"]
+    end
+
+    # The offline QR next to the push carries it on.
+    off = guard(user, token: token(third), offline: true)
+    assert_equal ["offline", rx], [step(off)["state"], claims(off)["rx"]]
+    kept = guard(user, token: token(off))
+    assert_equal ["offline", rx], [step(kept)["state"], claims(kept)["rx"]]
+
+    # A tap during a call moves the push to a passkey and Touchque extends it (180 s): the switch from the
+    # offline QR answers the live expiry, not the first one, and the new token keeps it.
+    api.escalate(step(first)["requestId"])
+    passkey = guard(user, token: token(kept))
+    live = Touchque::Steps.iso_ms(step(passkey)["expiresAt"])
+    assert_equal "passkey_required", step(passkey)["state"]
+    assert_operator live, :>, rx + 100_000, "the extended expiry, not the first one"
+    assert_equal live, claims(passkey)["rx"]
+    again = guard(user, token: token(passkey))
+    assert_equal ["passkey_required", Touchque::Steps.iso_of(live)], step(again).values_at("state", "expiresAt")
+  end
+
+  def test_a_push_moved_to_a_passkey_answers_its_extended_expiry
+    api.link("expiry-escalated@acme.com")
+    first = guard("expiry-escalated@acme.com")
+    rx = Touchque::Steps.iso_ms(step(first)["expiresAt"])
+    api.escalate(step(first)["requestId"])
+    poll = guard("expiry-escalated@acme.com", token: token(first))
+    live = Touchque::Steps.iso_ms(step(poll)["expiresAt"])
+    assert_equal "passkey_required", step(poll)["state"]
+    assert_operator live, :>, rx + 100_000
+    assert_equal live, claims(poll)["rx"]
+  end
+
+  def test_without_a_live_expiry_a_poll_falls_back_to_the_token
+    # A status answer without expiresAt (an older API): the token's rx; without rx either, none (5.1).
+    client = Touchque::Client.new(api_key: "tq_test_key", api_secret: "test_secret", base_url: "http://127.0.0.1:9")
+    client.login.define_singleton_method(:status) { |_id| { "status" => "PENDING" } }
+    rx = Touchque::Util.now_ms + 60_000
+    claims = { "u" => "old@acme.com", "a" => "LOGIN", "d" => Touchque::Details.digest(nil), "r" => nil, "st" => "waiting",
+               "rid" => "r1", "n" => nil, "oc" => nil, "exp" => Touchque::Util.now_ms + 600_000, "rx" => rx }
+    poll = Touchque::Guard.run(client, "old@acme.com", "LOGIN", token: Touchque::Steps.sign_guard_token("test_secret", claims))
+    assert_equal ["waiting", Touchque::Steps.iso_of(rx)], step(poll).values_at("state", "expiresAt")
+    assert_equal rx, claims(poll)["rx"]
+
+    old = Touchque::Guard.run(client, "old@acme.com", "LOGIN", token: Touchque::Steps.sign_guard_token("test_secret", claims.except("rx")))
+    assert_equal "waiting", step(old)["state"]
+    refute step(old).key?("expiresAt")
+    refute claims(old).key?("rx")
+  end
+
+  def test_a_passkey_request_repeats_its_expires_at
+    api.link("expiry-passkey@acme.com")
+    api.opts(passkeyOnly: true)
+    first = guard("expiry-passkey@acme.com")
+    assert_equal "passkey_required", step(first)["state"]
+    expires_at = Touchque::Steps.iso_of(Touchque::Steps.iso_ms(step(first)["expiresAt"]))
+    poll = guard("expiry-passkey@acme.com", token: token(first))
+    assert_equal ["passkey_required", expires_at], step(poll).values_at("state", "expiresAt")
+  end
+
+  def test_a_token_without_rx_takes_the_live_expiry
+    api.link("expiry-old@acme.com")
+    first = guard("expiry-old@acme.com")
+    old = Touchque::Steps.sign_guard_token("test_secret", claims(first).except("rx"))
+    poll = guard("expiry-old@acme.com", token: old)
+    expiry = Touchque::Steps.iso_ms(step(first)["expiresAt"])
+    assert_equal ["waiting", Touchque::Steps.iso_of(expiry)], step(poll).values_at("state", "expiresAt")
+    assert_equal expiry, claims(poll)["rx"]
+  end
+
+  # Guard.response: the answer for a result in your own handler.
+
+  def test_guard_response_gives_status_headers_and_json
+    api.link("answer@acme.com")
+    shape = ->(r) { { message: r[:message], code: r[:code], touchque: "mine" } }
+    called = false
+    waiting = guard("answer@acme.com")
+    status, headers, body = Touchque::Guard.response(waiting, error_body: ->(_) { called = true })
+    assert_equal [202, { "content-type" => "application/json; charset=utf-8", "cache-control" => "no-store" }], [status, headers]
+    assert_equal waiting[:body], JSON.parse(body)
+    refute called, "never for a 202 step"
+
+    api.reject
+    rejected = guard("answer@acme.com", token: token(waiting))
+    status, headers, body = Touchque::Guard.response(rejected, error_body: shape)
+    assert_equal [403, "rejected", nil], [status, headers["x-touchque-state"], headers["x-touchque-reason"]]
+    assert_equal({ "message" => "The approval was rejected.", "code" => "rejected", "touchque" => step(rejected) }, JSON.parse(body))
+
+    api.opts(rateLimited: true)
+    limited = guard("answer@acme.com")
+    api.opts(rateLimited: false)
+    status, headers, body = Touchque::Guard.response(limited)
+    assert_equal [429, "60", "rate_limited", "no-store"], [status, headers["retry-after"], headers["x-touchque-state"], headers["cache-control"]]
+    assert_equal limited[:body], JSON.parse(body), "the default body keeps its token"
+
+    misconfigured = guard("answer@acme.com", action: "NO_SUCH_ACTION")
+    status, headers, body = Touchque::Guard.response(misconfigured, error_body: ->(r) { r[:code] })
+    assert_equal [500, "blocked", "misconfigured", '"misconfigured"'], [status, headers["x-touchque-state"], headers["x-touchque-reason"], body]
+  end
+
+  def test_guard_response_logs_a_failing_error_body_and_sends_the_default_body
+    lines = []
+    Touchque.logger = Object.new.tap { |l| l.define_singleton_method(:error) { |m| lines << m } }
+    result = Touchque::Guard.unauthenticated
+    status, _, body = Touchque::Guard.response(result, error_body: ->(_) { raise "template missing" })
+    assert_equal [401, result[:body]], [status, JSON.parse(body)]
+    assert_equal ["[Touchque] errorBody failed: template missing"], lines
+  ensure
+    Touchque.logger = nil
+  end
+
+  def test_guard_response_refuses_an_approval_and_a_non_callable_error_body
+    assert_raises(ArgumentError) { Touchque::Guard.response({ status: 200, approved: { "requestId" => "r1" } }) }
+    assert_raises(ArgumentError) { Touchque::Guard.response(Touchque::Guard.unauthenticated, error_body: :shape) }
+  end
+
+  # Guard.run(nil, ...): the default client, Touchque.client.
+
+  UNCONFIGURED = "[Touchque] TQ_API_KEY and TQ_API_SECRET are not set: routes guarded by Touchque answer 500 misconfigured."
+
+  # Runs the block with Touchque.client built from +env+ only (no keys: none), the log captured.
+  def with_default_client(env = {})
+    saved = { env: ENV.to_h.slice("TQ_API_KEY", "TQ_API_SECRET", "TQ_API_URL"), logger: Touchque.logger,
+              logged: Touchque::Guard.unconfigured_logged,
+              options: Touchque.instance_variable_get(:@client_options), client: Touchque.instance_variable_get(:@client) }
+    %w[TQ_API_KEY TQ_API_SECRET TQ_API_URL].each { |name| ENV.delete(name) }
+    env.each { |name, value| ENV[name] = value }
+    Touchque.configure
+    Touchque::Guard.unconfigured_logged = false
+    lines = []
+    Touchque.logger = Object.new.tap { |l| l.define_singleton_method(:error) { |m| lines << m } }
+    yield
+    lines
+  ensure
+    %w[TQ_API_KEY TQ_API_SECRET TQ_API_URL].each { |name| ENV.delete(name) }
+    saved[:env].each { |name, value| ENV[name] = value }
+    Touchque.logger = saved[:logger]
+    Touchque::Guard.unconfigured_logged = saved[:logged]
+    Touchque.instance_variable_set(:@client_options, saved[:options])
+    Touchque.instance_variable_set(:@client, saved[:client])
+  end
+
+  def keys = { "TQ_API_KEY" => "tq_test_key", "TQ_API_SECRET" => "test_secret", "TQ_API_URL" => api.base_url }
+
+  def test_without_keys_a_nil_client_answers_500_or_401_and_logs_once
+    lines = with_default_client do
+      2.times { assert_equal Touchque::Guard.misconfigured, Touchque::Guard.run(nil, "jane@acme.com", "SEND_MONEY") }
+      assert_equal Touchque::Guard.unauthenticated, Touchque::Guard.run(nil, nil, "SEND_MONEY")
+    end
+    assert_equal [UNCONFIGURED], lines
+  end
+
+  def test_status_poll_with_a_nil_client_is_false_until_the_keys_are_set
+    # A valid waiting token for this user and action, signed with the secret the environment gives below.
+    claims = { "u" => "jane@acme.com", "a" => "SEND_MONEY", "d" => Touchque::Details.digest(nil), "r" => nil,
+               "st" => "waiting", "rid" => "r1", "exp" => Touchque::Util.now_ms + 60_000 }
+    valid = Touchque::Steps.sign_guard_token("test_secret", claims)
+    with_default_client do
+      refute Touchque::Guard.status_poll?(nil, "jane@acme.com", "SEND_MONEY", token: valid), "no client while the keys are missing"
+      keys.each { |name, value| ENV[name] = value }
+      assert Touchque::Guard.status_poll?(nil, "jane@acme.com", "SEND_MONEY", token: valid)
+    end
+  end
+
+  def test_default_client_setter_gives_the_nil_path_your_client_and_nil_forgets_it
+    api.link("mine@acme.com")
+    mine = Touchque::Client.new(api_key: "tq_test_key", api_secret: "test_secret", base_url: api.base_url)
+    with_default_client do
+      Touchque::Guard.default_client = mine # no keys in the environment: yours is used
+      assert_same mine, Touchque::Guard.default_client
+      first = Touchque::Guard.run(nil, "mine@acme.com", "LOGIN")
+      assert_equal 202, first[:status]
+      assert Touchque::Guard.status_poll?(nil, "mine@acme.com", "LOGIN", token: token(first))
+
+      # nil forgets it: the next call builds from the environment again.
+      Touchque::Guard.default_client = nil
+      assert_equal 500, Touchque::Guard.run(nil, "mine@acme.com", "LOGIN")[:status]
+      keys.each { |name, value| ENV[name] = value }
+      assert_equal 202, Touchque::Guard.run(nil, "mine@acme.com", "LOGIN")[:status]
+      refute_same mine, Touchque::Guard.default_client
+    end
+  end
+
+  def test_touchque_client_fails_fast_at_boot
+    with_default_client do
+      error = assert_raises(Touchque::ConfigError) { Touchque.client }
+      assert error.message.end_with?(Touchque::Client::MISSING_KEYS), error.message
+      assert_nil Touchque::Guard.default_client, "the guard's lookup answers nil instead (and logs)"
+    end
+  end
+
+  def test_with_keys_a_nil_client_runs_the_guard
+    api.link("default@acme.com")
+    lines = with_default_client(keys) do
+      first = Touchque::Guard.run(nil, "default@acme.com", "LOGIN")
+      assert_equal [202, "waiting"], [first[:status], step(first)["state"]]
+      assert Touchque::Guard.status_poll?(nil, "default@acme.com", "LOGIN", token: token(first))
+      api.approve
+      done = Touchque::Guard.run(nil, "default@acme.com", "LOGIN", token: token(first))
+      assert_equal [200, "default@acme.com"], [done[:status], done[:approved]["user"]]
+    end
+    assert_empty lines
+  end
+
+  def test_a_failed_default_client_build_is_retried_and_a_built_one_kept
+    api.link("retry@acme.com")
+    lines = with_default_client do
+      assert_equal 500, Touchque::Guard.run(nil, "retry@acme.com", "LOGIN")[:status]
+      # The keys arrive (a secret mounted late): the next request builds the client.
+      keys.each { |name, value| ENV[name] = value }
+      assert_equal 202, Touchque::Guard.run(nil, "retry@acme.com", "LOGIN")[:status]
+      built = Touchque.client
+      assert_equal 202, Touchque::Guard.run(nil, "retry@acme.com", "LOGIN")[:status]
+      assert_same built, Touchque.client
+    end
+    assert_equal [UNCONFIGURED], lines
   end
 
   def test_the_enroll_expiry_comes_from_ttl_ms_when_the_api_sends_no_date

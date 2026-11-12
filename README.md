@@ -65,7 +65,9 @@ does this loop for you. Once approved the action runs **once**. Refusals answer 
 blocked), 408 (expired), 423 (frozen) or 429 (rate limited) with `Retry-After`.
 
 A frontend of your own: while the first-time QR is up, polls answer `{"state": "enroll", "expiresAt": ...}`
-without `enroll`, so keep showing the QR you have; a new one comes with `enroll.qrCodeDataUrl`.
+without `enroll`, so keep showing the QR you have. About 15 s before it expires a new QR comes with
+`enroll.qrCodeDataUrl` and new recovery codes: the old QR and the old codes stop working. The other states
+are listed under [Guard inside your handler](#guard-inside-your-handler).
 
 The approving user is `current_user`'s email (else id, else username). For your login action
 (nobody is signed in yet) pass `user: -> { session[:password_verified_user] }`.
@@ -79,9 +81,10 @@ Without `TQ_API_KEY` / `TQ_API_SECRET` (or `config.touchque`) nothing raises: th
 **500** with `Cache-Control: no-store` and the body
 `{"touchque":{"state":"blocked","reason":"misconfigured"},"error":{"code":"misconfigured","message":"Two-factor approval is not configured correctly."}}`
 (401 `unauthenticated` when nobody is signed in), and never runs. It is logged once, through
-`Touchque.logger`: `[Touchque] TQ_API_KEY and TQ_API_SECRET are not set: routes guarded by Touchque
-answer 500 misconfigured.` A 500 rather than a 503: it is a deploy mistake for your monitoring to
-catch, not an outage to retry. `@touchque/web` shows "Approvals are not set up correctly on this site."
+`Touchque.logger` (in Rails, `Rails.logger` unless you set one): `[Touchque] TQ_API_KEY and
+TQ_API_SECRET are not set: routes guarded by Touchque answer 500 misconfigured.` A 500 rather than a
+503: it is a deploy mistake for your monitoring to catch, not an outage to retry. `@touchque/web` shows
+"Approvals are not set up correctly on this site."
 
 **Refusal headers.** Every answer of 400 and above carries `X-Touchque-State: <state>`, plus
 `X-Touchque-Reason: <reason>` when the step has one; `@touchque/web` 2.1.0 reads the step from them when
@@ -148,7 +151,8 @@ def create
 
   input = Touchque::Guard.input_from_headers(->(name) { request.headers[name] })
   result = Touchque::Guard.run(
-    Touchque.client, current_user.email, "SEND_MONEY",
+    nil, # the client: Touchque.client, built on this request, then kept
+    current_user.email, "SEND_MONEY",
     details: { "Amount" => "#{amount} EUR", "To" => account.iban }, # shown on the phone, bound to the approval
     ip: request.remote_ip, user_agent: request.user_agent, **input
   )
@@ -157,34 +161,58 @@ def create
     return render(json: { sent: true })
   end
 
-  # Cache-Control: no-store, Retry-After on 423 / 429, X-Touchque-State (and -Reason) on 400 and above
-  Touchque::Guard.headers(result).each { |name, value| response.headers[name] = value }
-  render json: result[:body], status: result[:status]
+  # Not approved (yet): what require_touchque sends for the same result.
+  status, headers, body = Touchque::Guard.response(result)
+  response.headers.merge!(headers)
+  render json: body, status: status
 end
 ```
 
+In Sinatra or plain Rack, `status, headers, body = Touchque::Guard.response(result)` and answer
+`[status, headers, [body]]`.
+
+- **The client.** `nil` is `Touchque::Guard.default_client`: `Touchque.client`, built from
+  `config.touchque` or `TQ_API_KEY` / `TQ_API_SECRET` on the first request that needs it and kept once
+  built, so nothing raises at boot or in a request. While a key is missing the answer is 500
+  `misconfigured` (401 `unauthenticated` without a user), logged once through `Touchque.logger`, and a
+  later request tries again. Do not pass `Touchque.client` itself: it raises `Touchque::ConfigError`
+  without keys. `Touchque::Guard.status_poll?` takes `nil` the same way.
+- **Your own client for `nil`** (your `base_url:`, say): `Touchque::Guard.default_client =
+  Touchque::Client.new(...)` once at boot; `Touchque::Guard.default_client = nil` forgets it, and the
+  next call builds from `config.touchque` / the environment again. The SDK logs through `Touchque.logger`
+  (in Rails, `Rails.logger` unless you set one). To fail fast at boot instead of answering 500, call
+  `Touchque.client` there: it raises `Touchque::ConfigError`, naming what is missing
+  (`Touchque::Guard.default_client` answers `nil` instead, and logs it once).
 - **202** `{"touchque": step, "token": "..."}`: show the step and send the same request again with
-  `X-Touchque-Token: <token>` until it is approved (`@touchque/web` does this loop).
+  `X-Touchque-Token: <token>` until it is approved (`@touchque/web` does this loop). While it waits
+  (`waiting`, `passkey_required`), every answer carries the request's `expiresAt`, as Touchque has it now
+  (a push moved to a passkey during a call gets more time): stop polling once it is past.
 - **200** with `result[:approved]`: run the action once. The approval is used up there: the same token
-  never approves twice.
-- **401, 403, 408, 423, 429, 500, 503**: send `status` and `body` as they are, with
-  `Touchque::Guard.headers(result)`: `Cache-Control: no-store`, `Retry-After` on 423 and 429,
-  `X-Touchque-State` and `X-Touchque-Reason`. For your own error shape,
-  `render json: Touchque::Guard.error_body(result, callable), status: result[:status]` sends what
-  `error_body:` would: it returns JSON text, and the default body (logged) when the callable raises.
+  never approves twice. `Touchque::Guard.response` raises `ArgumentError` for it.
+- **401, 403, 408, 423, 429, 500, 503**: `Touchque::Guard.response(result)` gives `[status, headers,
+  body]`, Rack style: the body as JSON text, the headers with lower-case names (`content-type`,
+  `cache-control: no-store`, `retry-after` on 423 and 429, `x-touchque-state` and `x-touchque-reason`).
+  For your own error shape pass a callable,
+  `Touchque::Guard.response(result, error_body: ->(r) { { message: r[:message], code: r[:code] } })`:
+  the rules of `require_touchque`'s `error_body:`; one that raises, or a result that cannot be encoded,
+  is logged and the default body sent.
 - **First-time QR**: a user with no phone linked gets the step `enroll` with
   `enroll.qrCodeDataUrl`, the recovery codes and `enroll.expiresAt`. While the first-time QR is up,
-  polls answer `{state: "enroll", expiresAt}` without `enroll`: keep showing the QR you have. A new QR
-  comes with `enroll.qrCodeDataUrl` when the old one expired. Pages on `@touchque/web` need 2.1.0.
+  polls answer `{state: "enroll", expiresAt}` without `enroll`: keep showing the QR you have. About 15 s
+  before it expires a poll brings a new QR with `enroll.qrCodeDataUrl` and new recovery codes: the old
+  QR and the old codes stop working. Pages on `@touchque/web` need 2.1.0.
+- **No linking QR** (`enroll: false`, on `Touchque::Guard.run` or `require_touchque`; the relay's
+  pre-auth `POST /login` and its passkey registration do the same): a user with no phone gets 202
+  `{"touchque": {"state": "enroll", "reason": "enrollment_off"}}`. It is final: stop polling and tell
+  them to link the Touchque app first.
+- **Other 202 states** (`passkey_required`, `offline`, an `enroll` with a `reason`) need
+  `@touchque/web`, or your own UI following the contract.
 - **Rate limits**: `Touchque::Guard.status_poll?` tells a poll from a new attempt (a poll only reads the
   status). If you count attempts per user, pass `Touchque::Guard.run` `before_start:`, a callable it calls
-  when a first-time QR poll starts after all (the user linked, or the QR expired), to charge that start;
+  when a first-time QR poll starts after all (the user linked, or the QR is gone or within about 15 s of
+  expiring), to charge that start;
   return a result to answer instead, or nil or false to go on (anything else answers 503). The relay does
   this for `POST /login`.
-
-`Touchque.client` raises `Touchque::ConfigError` when a key is missing. `Touchque::Guard.default_client`
-returns `nil` instead (and logs it once), and `Touchque::Guard.misconfigured` is the 500 answer
-`require_touchque` sends then.
 
 ## The three primitives (any framework)
 
@@ -196,7 +224,7 @@ approval = tq.complete(step["requestId"], "jane@acme.com", "SEND_MONEY", details
 # uses the approval once, and only for this user, action and amount
 ```
 
-`Touchque::Guard.run(tq, user, action, token:, offline:, code:, ...)` is the whole two-phase
+`Touchque::Guard.run(nil, user, action, token:, offline:, code:, ...)` is the whole two-phase
 contract for Sinatra, Hanami or plain Rack: see "Guard inside your handler".
 
 ## Waiting in one call
@@ -230,10 +258,12 @@ Routes: `POST /login`, `/enroll/start`, `GET /enroll/status`, `/offline/challeng
 `/passkey/register/options|verify`, `GET /passkey/credentials`, `DELETE /passkey/credentials/:id`.
 Pre-auth routes are rate limited (20 per IP, 5 per username a minute; pass `rate_limit: { store: }`
 for Redis across processes). Polls of an approval on its way have their own per-IP budget; a
-first-time QR poll that starts after all (the user linked, or the QR expired) counts against the
-username's budget like a new attempt. Guard answers of 400 and above carry `X-Touchque-State` (and
-`X-Touchque-Reason`). The offline routes stay off until `get_login_user` is set. Adding a passkey for a
-user with a linked phone waits for the phone first.
+first-time QR poll that starts after all (the user linked, or the QR is gone or within about 15 s of
+expiring) counts against the username's budget like a new attempt. Guard answers of 400 and above carry `X-Touchque-State` (and
+`X-Touchque-Reason`). The offline routes stay off until `get_login_user` is set, and without it
+`POST /login` never shows the linking QR: a user with no phone gets 202
+`{"touchque": {"state": "enroll", "reason": "enrollment_off"}}`. Adding a passkey for a user with a
+linked phone waits for the phone first.
 
 ## Webhooks
 
@@ -446,6 +476,79 @@ end
 
 `Touchque::SafeApproval.verify` makes the guard's check off chain, so a co-signer or your own server never has to trust Touchque: it computes the Safe transaction hash (EIP-712) and the governance hash from the raw fields, rebuilds the 149-byte message the phone signed and checks the P-256 signature. `purpose:` defaults to `"approve"`: a schedule approval covers no Safe nonce or gas fields, so it is accepted only when you pass `purpose: "schedule"`, never as permission to execute. It refuses a high `s`, an approval that expired or is valid for more than a day, another approver index, and, when you pass `rows:` or `display_digest:` from your own decoding, rows the phone did not show. `"reason"` is `approval_malformed`, `public_key_invalid`, `approver_index_mismatch`, `approval_expired`, `rows_differ`, `high_s` or `signature_invalid`. `safe_tx_hash`, `governance_hash`, `message` and `display_digest` are public too.
 
+## Testing your routes
+
+`Touchque::Testing::FakeTouchque` (`require "touchque/testing"`) is a `Touchque::Client` that answers in
+memory: no network, no API keys, no Node.js. The real guard runs, so your routes answer what they answer
+in production, and your test plays the phone. A Rails request test:
+
+```ruby
+# test/integration/transfers_test.rb
+require "test_helper"
+require "touchque/testing"
+
+class TransfersTest < ActionDispatch::IntegrationTest
+  setup { @tq = Touchque::Testing::FakeTouchque.new.install } # now Touchque.client
+  teardown { @tq.uninstall }
+
+  test "a transfer needs an approval on the phone" do
+    sign_in_as users(:jane) # your own sign-in helper
+    post transfers_path, params: { amount: 5 }, as: :json
+    assert_response :accepted # 202: the step and a token
+    token = response.parsed_body["token"]
+
+    @tq.approve # the person approves on the phone
+    post transfers_path, params: { amount: 5 }, as: :json, headers: { "X-Touchque-Token" => token }
+    assert_response :success
+    assert_equal [{ "label" => "Amount", "value" => "5 EUR" }], @tq.requests.last["details"]
+  end
+end
+```
+
+Sinatra or plain Rack, with `rack-test`:
+
+```ruby
+require "rack/test"
+require "touchque/testing"
+
+class TransferTest < Minitest::Test
+  include Rack::Test::Methods
+
+  def app = MyApp # Touchque::Guard.run(nil, ...) in its route
+
+  def test_a_transfer_needs_an_approval
+    Touchque::Testing::FakeTouchque.new.install do |tq| # the default client inside the block
+      post "/transfer", JSON.generate(amount: 5), "CONTENT_TYPE" => "application/json"
+      assert_equal 202, last_response.status
+      tq.approve
+      header "X-Touchque-Token", JSON.parse(last_response.body)["token"]
+      post "/transfer", JSON.generate(amount: 5), "CONTENT_TYPE" => "application/json"
+      assert_equal 200, last_response.status
+    end
+  end
+end
+```
+
+- `install` makes the fake the default client (`Touchque::Guard.default_client = tq`, so
+  `Touchque.client`), which `require_touchque`, `Touchque::Guard.run(nil, ...)` and a relay given no
+  `client:` use, until `uninstall`; with a block, for the block only. Install it
+  after your app configured Touchque (`Touchque.configure` drops it). A `Touchque::Rack::Relay` keeps the
+  client of its first request: give it `client: tq` in a test that builds it.
+- `tq.approve`, `tq.reject`, `tq.expire`: the latest request, or one by its id
+  (`tq.approve(request_id)`; `via: "WEBAUTHN"` approves with a passkey).
+- `FakeTouchque.new(auto_approve: true)` (or `tq.auto_approve = true`): every request is approved as it
+  is made. The first request still answers 202; the next one runs the action.
+- Every user has a phone linked. `tq.unlink(user)` shows them the first-time QR instead
+  (`FakeTouchque.new(linked: false)`: nobody has one); `tq.link(user)` is the phone scanning it.
+  `tq.secret_ttl_ms` is how long a QR works (5 minutes).
+- `FakeTouchque.new(number_match: true)`: pushes ask for the number `47`.
+- `tq.requests` (`"id"`, `"user"`, `"type"`, `"details"`, `"referenceId"`, `"status"`, `"expiresAt"`,
+  answered on each status check) and `tq.calls` (`"method"`, `"path"`, `"body"`): what your app asked
+  Touchque, in order.
+- Offline approval: the code is `ABCD123` (`FakeTouchque::OFFLINE_CODE`), the time-based code `123456`
+  (`FakeTouchque::TOTP_CODE`). Calls outside the step-up (recovery, agents …) raise
+  `Touchque::APIError` 404. `Touchque::Testing::FakeClient` is another name for it.
+
 ## Errors, case codes and retries
 
 | Error | When |
@@ -468,7 +571,7 @@ never follows redirects and refuses plain `http://` except for localhost.
 
 ## Logging
 
-The SDK writes nothing to `$stderr` on its own. To see its own problems (a misconfigured guard, a failed `on_challenge`, a relay without `get_login_user`), set a logger: `Touchque.logger = Rails.logger` (or any `Logger`). Lines carry an error's class and message, never the request.
+The SDK writes nothing to `$stderr` on its own. To see its own problems (a misconfigured guard, a failed `on_challenge`, a relay without `get_login_user`), set a logger: `Touchque.logger = Logger.new($stdout)` (or any `Logger`). In Rails the Railtie sets it to `Rails.logger` when your app set none; set your own in an initializer (`nil` for none). Lines carry an error's class and message, never the request.
 
 ## Development
 

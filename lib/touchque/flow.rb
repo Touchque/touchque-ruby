@@ -11,7 +11,8 @@ module Touchque
 
     module_function
 
-    # Starts an approval for +action+; never waits.
+    # Starts an approval for +action+; never waits. A user with no phone linked gets the
+    # linking QR ("enroll"); with enroll: false, {"state" => "enroll", "reason" => "enrollment_off"}.
     def start(client, action, user, details: nil, reference_id: nil, ip: nil, user_agent: nil, enroll: true, browser_proof: nil, context: nil)
       raise ConfigError, "start() needs the user id" if user.to_s.empty?
 
@@ -37,7 +38,8 @@ module Touchque
         code = e.code || e.error
         why = e.case_code ? { "caseCode" => e.case_code } : {}
         if e.status == 404 && (code == "device_not_linked" || e.message.downcase.include?("linked device"))
-          return enroll ? enroll_step(client, user) : { "state" => "enroll" }
+          # No phone, and this guard may not show the linking QR: final, a page stops polling.
+          return enroll ? enroll_step(client, user) : { "state" => "enroll", "reason" => "enrollment_off" }
         end
         return { "state" => "frozen", "retryAfter" => e.retry_after }.merge(why) if e.status == 423
         return { "state" => "rate_limited", "retryAfter" => e.retry_after }.merge(why) if e.status == 429
@@ -113,12 +115,15 @@ module Touchque
       out
     end
 
-    # Where a started approval is now.
+    # Where a started approval is now. While it waits (waiting, passkey_required) the step has
+    # the request's live "expiresAt" when Touchque sends it: a switch to a passkey during a call
+    # extends it.
     def check(client, request_id)
       s = client.login.status(request_id)
       state = s["status"] == "PENDING" && s["requiresPasskey"] ? "passkey_required" : STATE_MAP.fetch(s["status"], "waiting")
       step = { "state" => state, "requestId" => request_id }
       step["assurance"] = s["assurance"] if state == "approved" && s["assurance"]
+      step["expiresAt"] = s["expiresAt"] if %w[waiting passkey_required].include?(state) && iso_ms(s["expiresAt"])
       step
     end
 
@@ -177,11 +182,15 @@ module Touchque
   # Framework-agnostic step-up guard (the Rails concern is a thin wrapper over it).
   # Contract, the same in every Touchque server SDK:
   #   1st request            -> 202 {"touchque" => step, "token" => ...}  show the step in your UI
-  #   repeat with the token   -> 202 while waiting, then the protected action runs once
+  #   repeat with the token   -> 202 while waiting (each answer carries the request's live "expiresAt"),
+  #                              then the protected action runs once
   #   refused                 -> 403 / 408 / 423 / 429 {"touchque" => {"state" => ...}}
   #   first-time QR up        -> 202 {"touchque" => {"state" => "enroll", "expiresAt" => ...}} with no
-  #                              "enroll": keep showing the QR; a new one comes with
-  #                              "enroll" => {"qrCodeDataUrl"} once the old one expired
+  #                              "enroll": keep showing the QR; about 15 s before it expires a new one
+  #                              comes with "enroll" => {"qrCodeDataUrl"} and new recovery codes
+  #   no phone, enroll: false -> 202 {"touchque" => {"state" => "enroll", "reason" => "enrollment_off"}}: final
+  # run(nil, ...) uses default_client (Touchque.client; set with default_client=); response(result)
+  # gives the Rack-style answer to send.
   # Request headers the browser sends back: X-Touchque-Token, X-Touchque-Offline: 1,
   # X-Touchque-Code (+ X-Touchque-Code-Type: totp), X-Touchque-Browser (silent sign-ins).
   module Guard
@@ -196,6 +205,8 @@ module Touchque
     STATUS = { "waiting" => 202, "enroll" => 202, "passkey_required" => 202, "offline" => 202, "approved" => 200,
                "rejected" => 403, "blocked" => 403, "expired" => 408, "frozen" => 423, "rate_limited" => 429 }.freeze
     WAITING = %w[waiting passkey_required offline].freeze
+    # Steps whose token carries the request's expiry (claim "rx"): every poll answers an expiresAt.
+    EXPIRING = %w[waiting passkey_required].freeze
     # A first-time QR this close to its expiry is replaced instead of kept on screen.
     ENROLL_MARGIN_MS = 15_000
     # The refusal message for a state when the guard set none (anything else: "The approval was refused.").
@@ -245,9 +256,13 @@ module Touchque
     # it is up (more than 15 s before it expires), and no offline switch or code. Relays do
     # not count it against the per-user push limit. Such an enroll poll can still start
     # (the user linked, or the QR is gone): relays charge that through run's before_start.
-    # Renewing an expiring QR counts.
+    # Renewing an expiring QR counts. +client+: as run's; nil is default_client, and false
+    # while it cannot be built.
     def status_poll?(client, user, action, details: nil, reference_id: nil, token: nil, offline: false, code: nil)
       return false if user.to_s.empty? || token.to_s.empty? || offline || !code.to_s.empty?
+
+      client ||= default_client
+      return false unless client
 
       claims = Steps.verify_guard_token(client.api_secret, token)
       return false unless claims && bound?(claims, user, action, details, reference_id)
@@ -281,9 +296,11 @@ module Touchque
       claims["u"] == user && claims["a"] == action && claims["d"] == Details.digest(details) && claims["r"] == reference_id
     end
 
-    # Touchque.client for the per-route adapters: built on the request, kept once built.
-    # nil when it cannot be built (TQ_API_KEY / TQ_API_SECRET missing, a bad key or URL),
-    # logged once per process; the adapter then answers 500 misconfigured.
+    # Touchque.client for run(nil, ...) and the per-route adapters: built on the request,
+    # kept once built. nil when it cannot be built (TQ_API_KEY / TQ_API_SECRET missing, a bad
+    # key or URL), logged once per process through Touchque.logger; the guard then answers
+    # 500 misconfigured, and a later request tries again. To fail fast at boot instead, call
+    # Touchque.client there: it raises Touchque::ConfigError, naming what is missing.
     def default_client
       Touchque.client
     rescue ConfigError => e
@@ -297,6 +314,14 @@ module Touchque
         Touchque.log :error, line
       end
       nil
+    end
+
+    # Makes +client+ the default client (Touchque.client) of run(nil, ...), status_poll?(nil,
+    # ...) and require_touchque: the way to give them your own client (built with your
+    # base_url, say; Touchque.logger is the SDK's logger). nil forgets it, so the next call
+    # builds from Touchque.configure / the environment again.
+    def default_client=(client)
+      Touchque.client = client
     end
 
     # The 401 for a request without a signed-in user.
@@ -337,6 +362,30 @@ module Touchque
       result[:body].to_json
     end
 
+    JSON_TYPE = "application/json; charset=utf-8"
+
+    # The HTTP answer for a result of run that is not an approval, Rack style:
+    # [status, headers, body], the body as JSON text: what require_touchque and the relay
+    # send for it. headers: content-type, cache-control: no-store, retry-after on 423 / 429
+    # and, on 400 and above, x-touchque-state / x-touchque-reason (lower-case names, as Rack 3
+    # wants). +error_body+: a callable for your own error shape on 400 and above, as
+    # error_body(result, callable): one that raises, or a result that cannot be encoded, is
+    # logged and the default body sent. An approval raises ArgumentError: run your action.
+    #
+    #   status, headers, body = Touchque::Guard.response(result)
+    #   [status, headers, [body]] # a Rack response
+    def response(result, error_body: nil)
+      raise ArgumentError, "Guard.response: the result is an approval: run your action instead" if result[:approved]
+      unless error_body.nil? || error_body.respond_to?(:call)
+        raise ArgumentError, "Guard.response: error_body must respond to call"
+      end
+
+      body = error_body && result[:status] >= 400 ? Guard.error_body(result, error_body) : result[:body].to_json
+      out = { "content-type" => JSON_TYPE }
+      Guard.headers(result).each { |name, value| out[name.downcase] = value }
+      [result[:status], out, body]
+    end
+
     # An error_body result in the form it is encoded in: a Struct or Data as its Hash, an
     # object with to_hash as that, one whose as_json is a Hash as that; anything else as it is.
     def jsonable(value)
@@ -353,8 +402,13 @@ module Touchque
     end
 
     # Runs one step of the guard: {status: 200, approved: approval} (run your protected
-    # action once) or {status:, body: {"touchque" => step, "token" => ...}} to send back
-    # with headers(result).
+    # action once) or {status:, body: {"touchque" => step, "token" => ...}} to send back as
+    # response(result) gives it.
+    # +client+: your Touchque::Client, or nil for default_client (Touchque.client, built on
+    # the first request that needs it; while it cannot be built the answer is 500
+    # misconfigured, 401 unauthenticated without a user, logged once).
+    # +enroll+: false for a guard that may not show the linking QR: a user with no phone gets
+    # 202 {"state" => "enroll", "reason" => "enrollment_off"}.
     # Silent sign-ins: with +silent_sign_in+ on, a new attempt that carries a browser
     # proof first asks Touchque (risk.check); only an answer of exactly prompt: false
     # approves at once with no push. Otherwise, and on any error, the usual push starts.
@@ -368,6 +422,9 @@ module Touchque
             code: nil, code_type: nil, enroll: true, browser_proof: nil, silent_sign_in: false, context: nil, before_start: nil)
       return unauthenticated if user.to_s.empty?
 
+      client ||= default_client
+      return misconfigured unless client
+
       norm = Details.normalize(details)
       norm = nil if norm.empty?
       base = { "u" => user, "a" => action, "d" => Details.digest(details), "r" => reference_id }
@@ -377,6 +434,11 @@ module Touchque
         claims = base.merge("st" => step["state"], "rid" => step["requestId"], "n" => step["number"],
                             "oc" => step.dig("offline", "challengeId"), "exp" => Util.now_ms + TOKEN_TTL_MS)
         claims["cc"] = step["caseCode"] if step["caseCode"]
+        # A push or passkey: its token carries when the request expires (rx), for polls without a live expiry.
+        if EXPIRING.include?(step["state"])
+          expiry = Steps.iso_ms(step["expiresAt"])
+          claims["rx"] = expiry if expiry
+        end
         # A first-time QR: its token carries when the QR expires (ee), so polls keep it on screen.
         if step["state"] == "enroll" && step["enroll"].is_a?(Hash) && !step["enroll"]["qrCodeDataUrl"].to_s.empty?
           ee = Steps.iso_ms(step["enroll"]["expiresAt"])
@@ -393,7 +455,15 @@ module Touchque
         n = bound && bound["n"]
         oc = bound && bound["oc"]
         st = bound && bound["st"]
-        keep = { "oc" => oc, "rid" => rid, "n" => n }
+        # The request's expiry (rx) stays with it: waiting / passkey answers carry it as expiresAt (the
+        # live one from Touchque's status answer when there is one), and the offline steps carry it on.
+        rx = bound && bound["rx"].is_a?(Integer) ? bound["rx"] : nil
+        keep_rx = rx ? { "rx" => rx } : {}
+        expiring = lambda do |step, live = nil|
+          at = live || rx
+          at ? step.merge("expiresAt" => Steps.iso_of(at)) : step
+        end
+        keep = { "oc" => oc, "rid" => rid, "n" => n }.merge(keep_rx)
 
         # Offline: the user typed the code from the phone.
         if bound && !code.to_s.empty? && (st == "offline" || code_type == "totp")
@@ -416,7 +486,7 @@ module Touchque
           return issue.call({ "state" => "rejected", "requestId" => rid, "reason" => "request_rejected" }) if res["reason"] == "request_rejected"
           # The push now waits for a passkey (Vishing Shield): no code may finish it.
           if res["reason"] == "passkey_required" && rid
-            return issue.call({ "state" => "passkey_required", "requestId" => rid, "number" => n }, { "n" => n })
+            return issue.call(expiring.call({ "state" => "passkey_required", "requestId" => rid, "number" => n }), { "n" => n })
           end
 
           return issue.call({ "state" => res["reason"] == "expired" ? "expired" : "blocked", "reason" => res["reason"] || "offline_failed" })
@@ -428,12 +498,12 @@ module Touchque
             ch = client.offline.challenge(user, type: action, details: norm, client_ip: ip, user_agent: user_agent, request_id: rid)
             offline_step = ch.slice("challengeId", "qrDataUrl", "expiresAt", "totpAvailable")
             offline_step["challengeCode"] = ch["challengeCode"] if ch["challengeCode"] && !ch["challengeCode"].empty?
-            return issue.call({ "state" => "offline", "offline" => offline_step }, { "rid" => rid, "n" => ch["challengeCode"] || n })
+            return issue.call({ "state" => "offline", "offline" => offline_step }, { "rid" => rid, "n" => ch["challengeCode"] || n }.merge(keep_rx))
           rescue APIError => e
             err = e.code || e.error
             return issue.call({ "state" => "rejected", "requestId" => rid, "reason" => "request_rejected" }) if e.status == 409 && err == "request_rejected"
             if rid && err == "passkey_required"
-              return issue.call({ "state" => "passkey_required", "requestId" => rid, "number" => n }, { "n" => n })
+              return issue.call(expiring.call({ "state" => "passkey_required", "requestId" => rid, "number" => n }), { "n" => n })
             end
             return issue.call({ "state" => "blocked", "reason" => e.code || e.error || "offline_unavailable" }) if e.status < 500
 
@@ -444,6 +514,8 @@ module Touchque
         # Waiting on a push / passkey, or the offline QR next to a push still open: poll, run once approved.
         if bound && rid && WAITING.include?(st)
           now = Steps.check(client, rid)
+          # The live expiry: a switch to a passkey during a call extends it. The new token keeps it (rx).
+          live = Steps.iso_ms(now["expiresAt"])
           if now["state"] == "approved"
             begin
               return { status: 200, approved: Steps.complete(client, rid, user, action, details: details, reference_id: reference_id) }
@@ -455,13 +527,15 @@ module Touchque
           end
           # The push behind the QR moved to a passkey after a tap during a call.
           if st == "offline" && now["state"] == "passkey_required"
-            return issue.call({ "state" => "passkey_required", "requestId" => rid, "number" => n }, { "n" => n })
+            return issue.call(expiring.call({ "state" => "passkey_required", "requestId" => rid, "number" => n }, live), { "n" => n })
           end
           # Nothing changed for the user: keep showing the QR they have.
-          return issue.call({ "state" => "offline", "offline" => { "challengeId" => oc.to_s } }, keep) if st == "offline" && %w[waiting expired].include?(now["state"])
+          if st == "offline" && %w[waiting expired].include?(now["state"])
+            return issue.call({ "state" => "offline", "offline" => { "challengeId" => oc.to_s } }, live ? keep.merge("rx" => live) : keep)
+          end
           if %w[waiting passkey_required].include?(now["state"])
-            waiting = { "state" => now["state"], "requestId" => rid, "number" => n }
-            # "Why?": the case code stays on screen while it waits.
+            waiting = expiring.call({ "state" => now["state"], "requestId" => rid, "number" => n }, live)
+            # "Why?": the case code stays on screen while it waits, and so does when the request expires.
             waiting["caseCode"] = bound["cc"] if bound["cc"]
             return issue.call(waiting, { "n" => n })
           end

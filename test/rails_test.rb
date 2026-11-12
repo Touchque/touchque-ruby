@@ -10,6 +10,7 @@ require "touchque/rack/relay"
 require "touchque/rails/guard"
 require "touchque/rails/hosted_login"
 require "touchque/railtie"
+require "touchque/testing"
 
 TENANT = FakeTenant.new
 WEBHOOK_EVENTS = []
@@ -58,6 +59,19 @@ class ShapedTransfersController < ActionController::Base
   end
 end
 
+# Answers a guard result the test gives, the way require_touchque answers one.
+class AnswersController < ActionController::Base
+  include Touchque::Rails::Guard
+
+  class << self
+    attr_accessor :result, :error_body
+  end
+
+  def create
+    touchque_render(self.class.result, self.class.error_body)
+  end
+end
+
 class WebhooksController < ActionController::Base
   include Touchque::Rails::Webhook
 
@@ -80,10 +94,13 @@ class AccountController < ActionController::Base
 end
 
 TouchqueTestApp.initialize!
+# What the Railtie left in Touchque.logger: the app set none.
+LOGGER_AT_BOOT = Touchque.logger
 Touchque.hosted_login = Touchque::HostedLogin.new(domain: FakeTenant::ISSUER, client_id: FakeTenant::CLIENT, client_secret: "s3cret", transport: TENANT.transport)
 TouchqueTestApp.routes.draw do
   post "/transfer" => "transfers#create"
   post "/shaped" => "shaped_transfers#create"
+  post "/answer" => "answers#create"
   post "/webhooks/touchque" => "webhooks#create"
   get "/account" => "account#show"
   Touchque::Rails.login_routes(self)
@@ -111,6 +128,33 @@ class RailsTest < FakeApiTest
     assert_equal "test_secret", Touchque.client.api_secret
     assert_equal FakeTenant::ISSUER, Touchque.login_options[:domain]
     assert Touchque.login_secret.length >= 32
+  end
+
+  def test_railtie_defaults_the_logger_to_rails_logger
+    refute_nil LOGGER_AT_BOOT
+    assert_same ::Rails.logger, LOGGER_AT_BOOT
+  end
+
+  def test_railtie_keeps_a_logger_the_app_set
+    script = <<~RUBY
+      require "logger"
+      require "rails"
+      require "action_controller/railtie"
+      require "touchque"
+      mine = Logger.new(nil)
+      Touchque.logger = mine
+      class LoggerApp < Rails::Application
+        config.root = #{__dir__.dump}
+        config.eager_load = false
+        config.secret_key_base = "s" * 64
+        config.logger = Logger.new(nil)
+      end
+      LoggerApp.initialize!
+      print Touchque.logger.equal?(mine)
+    RUBY
+    out, status = Open3.capture2e(RbConfig.ruby, "-I", File.expand_path("../lib", __dir__), "-e", script)
+    assert status.success?, out
+    assert_equal "true", out
   end
 
   def test_require_touchque_runs_the_action_once_after_the_phone
@@ -259,6 +303,79 @@ class RailsTest < FakeApiTest
     post "/transfer", { amount: "1" }
     assert_equal [423, "frozen", "900"], [last_response.status, last_response.headers["X-Touchque-State"], last_response.headers["Retry-After"]]
     assert_nil last_response.headers["X-Touchque-Reason"], "no reason, no header"
+  end
+
+  def test_guard_response_is_what_require_touchque_and_the_relay_send
+    api.link("answers@acme.com")
+    waiting = Touchque::Guard.run(tq, "answers@acme.com", "LOGIN")
+    api.reject
+    rejected = Touchque::Guard.run(tq, "answers@acme.com", "LOGIN", token: waiting[:body]["token"])
+    api.opts(rateLimited: true)
+    limited = Touchque::Guard.run(tq, "answers@acme.com", "LOGIN")
+    api.opts(rateLimited: false)
+    misconfigured = Touchque::Guard.run(tq, "answers@acme.com", "NO_SUCH_ACTION")
+    results = [waiting, rejected, limited, misconfigured]
+    assert_equal [202, 403, 429, 500], results.map { |r| r[:status] }
+
+    error_bodies = { "no error_body" => nil, "a hash" => ->(r) { { message: r[:message], touchque: "mine" } },
+                     "a string" => ->(r) { r[:message] }, "nil" => ->(_) {} }
+    handler = Touchque::RelayHandler.new(tq, get_user_id: ->(_) {}, get_login_user: ->(_) {}, rate_limit: false)
+    results.each do |result|
+      error_bodies.each do |name, error_body|
+        status, headers, body = Touchque::Guard.response(result, error_body: error_body)
+        AnswersController.result = result
+        AnswersController.error_body = error_body
+        post "/answer"
+        assert_equal [status, body], [last_response.status, last_response.body], "#{status}, #{name}"
+        headers.each { |h, value| assert_equal value, last_response.headers[h], "#{status}, #{name}: #{h}" }
+        %w[retry-after x-touchque-state x-touchque-reason].each do |h|
+          assert_equal headers.key?(h), last_response.headers.key?(h), "#{status}, #{name}: #{h}"
+        end
+      end
+      status, headers, body = Touchque::Guard.response(result)
+      relayed = handler.send(:guard_response, result)
+      assert_equal [status, JSON.parse(body), headers.except("content-type").to_a], [relayed.status, relayed.body, relayed.headers]
+    end
+  end
+
+  # FakeTouchque in a Rails request test: no network, the test plays the phone.
+
+  def test_fake_touchque_plays_the_phone_for_require_touchque
+    TRANSFERS_RAN.clear
+    Touchque::Testing::FakeTouchque.new.install do |fake|
+      header "X-User", "fake@acme.com"
+      post "/transfer", { amount: "5 EUR" }
+      assert_equal [202, "waiting"], [last_response.status, json["touchque"]["state"]]
+      header Touchque::Guard::TOKEN_HEADER, json["token"]
+      post "/transfer", { amount: "5 EUR" }
+      assert_equal 202, last_response.status
+      fake.approve
+      post "/transfer", { amount: "5 EUR" }
+      assert_equal [200, "DEVICE"], [last_response.status, json["via"]]
+      assert_equal [fake.requests.last["id"]], TRANSFERS_RAN
+      assert_equal [{ "label" => "Amount", "value" => "5 EUR" }], fake.requests.last["details"]
+      assert_empty api.calls, "nothing reached the network"
+    end
+    assert_equal "test_secret", Touchque.client.api_secret, "the app's client is back"
+  end
+
+  def test_fake_touchque_behind_the_rack_relay
+    fake = Touchque::Testing::FakeTouchque.new
+    relay = Touchque::Rack::Relay.new(client: fake, get_user_id: ->(_) {}, get_login_user: ->(_) { "relay@acme.com" })
+    status, _, first = relay_login(relay)
+    assert_equal [202, "waiting"], [status, first["touchque"]["state"]]
+    fake.approve
+    status, _, done = relay_login(relay, first["token"])
+    assert_equal [200, "success"], [status, done["status"]]
+
+    # Without get_login_user a user with no phone gets no linking QR, and the reason.
+    fake.unlink("nophone@acme.com")
+    pre_auth = Touchque::Rack::Relay.new(client: fake, get_user_id: ->(_) {}, rate_limit: false)
+    env = Rack::MockRequest.env_for("/login", method: "POST", input: JSON.generate({ externalUsername: "nophone@acme.com" }),
+                                              "CONTENT_TYPE" => "application/json")
+    status, headers, body = pre_auth.call(env)
+    assert_equal [202, { "state" => "enroll", "reason" => "enrollment_off" }, nil],
+                 [status, JSON.parse(body.join)["touchque"], headers["x-touchque-state"]]
   end
 
   # The relay's POST /login for +user+ (behind the password step, so it offers the linking QR).

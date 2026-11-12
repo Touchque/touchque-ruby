@@ -105,6 +105,9 @@ module Touchque
   #   get_user_id      (required) the signed-in user, for the signed-in routes.
   #   get_login_user   the user who passed YOUR first factor. STRONGLY RECOMMENDED: /login
   #                    and the offline routes then act for this user and ignore the body's.
+  #                    Without it /login never shows the linking QR: a user with no phone gets
+  #                    202 {touchque: {state: "enroll", reason: "enrollment_off"}}, as passkey
+  #                    registration does.
   #   rate_limit       { window_seconds:, per_ip: 20, per_user: 5, store: } or false.
   #   allow_offline_without_first_factor  let the offline routes trust the body's username.
   #   action_type      for /login and the offline routes (default LOGIN).
@@ -256,10 +259,12 @@ module Touchque
       end
     end
 
-    # A guard answer that is not an approval, with Guard.headers (no-store, Retry-After, X-Touchque-State / -Reason).
+    # A guard answer that is not an approval, as Guard.response gives it (no-store, Retry-After,
+    # X-Touchque-State / -Reason); the Rack relay adds the content type itself.
     def guard_response(result)
-      res = RelayResponse.new(result[:status], result[:body])
-      Guard.headers(result).each { |name, value| res.set_header(name, value) }
+      status, headers, body_json = Guard.response(result)
+      res = RelayResponse.new(status, JSON.parse(body_json))
+      headers.each { |name, value| res.set_header(name, value) unless name == "content-type" }
       res
     end
 

@@ -37,6 +37,8 @@ module Touchque
     #
     # Touchque.client is built on the first request: without TQ_API_KEY / TQ_API_SECRET the
     # action answers 500 misconfigured (401 without a signed-in user) and never runs.
+    # enroll: false: a user with no phone gets 202 {"touchque": {"state": "enroll",
+    # "reason": "enrollment_off"}} instead of the linking QR.
     module Guard
       def self.included(base)
         base.extend(ClassMethods)
@@ -86,22 +88,29 @@ module Touchque
           request.env["touchque.approval"] = result[:approved]
           return
         end
-        Touchque::Guard.headers(result).each { |name, value| response.headers[name] = value }
-        render json: touchque_body(result, options[:error_body]), status: result[:status]
+        touchque_render(result, options[:error_body])
       end
 
-      # The guard's body, or error_body's (JSON text; the default body when it fails) for an
-      # answer of 400 and above.
-      def touchque_body(result, error_body)
-        return result[:body] if error_body.nil? || result[:status] < 400
+      # Renders a guard result that is not an approval as Touchque::Guard.response gives it
+      # (render sets the JSON content type).
+      def touchque_render(result, error_body)
+        status, headers, body = Touchque::Guard.response(result, error_body: touchque_error_body(error_body))
+        headers.each { |name, value| response.headers[name] = value unless name == "content-type" }
+        render json: body, status: status
+      end
 
-        Touchque::Guard.error_body(result, lambda { |refusal|
+      # error_body as a callable for Touchque::Guard.response: a proc runs in the controller,
+      # a Symbol names one of its methods.
+      def touchque_error_body(error_body)
+        return nil if error_body.nil?
+
+        lambda do |refusal|
           case error_body
           when Proc then instance_exec(refusal, &error_body)
           when Symbol then send(error_body, refusal)
           else error_body.call(refusal)
           end
-        })
+        end
       end
 
       def touchque_value(option)

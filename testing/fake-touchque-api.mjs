@@ -202,7 +202,8 @@ route('POST', '/__test/approve', (req, res, b) => {
   send(res, 200, { id: r.id });
 });
 // Like the API's Vishing Shield: still PENDING, now passkey-only, the phone was refused.
-route('POST', '/__test/escalate', (req, res, b) => { const r = pickOr404(res, b.id); if (!r) return; r.requiresPasskey = true; r.challengeCode = undefined; send(res, 200, { id: r.id }); });
+// Like the API: an approval escalated to a passkey stays open 180 s for the ceremony.
+route('POST', '/__test/escalate', (req, res, b) => { const r = pickOr404(res, b.id); if (!r) return; r.requiresPasskey = true; r.challengeCode = undefined; r.expiresAt = new Date(Date.now() + 180000).toISOString(); send(res, 200, { id: r.id }); });
 route('POST', '/__test/reconfirm', (req, res, b) => { const r = pickOr404(res, b.id); if (!r) return; r.reconfirmedAt = new Date().toISOString(); send(res, 200, { id: r.id }); });
 route('POST', '/__test/revoke', (req, res, b) => { const r = pickOr404(res, b.id); if (!r) return; r.revokedAt = new Date().toISOString(); r.revokeReason = b.reason || 'COACHED'; send(res, 200, { id: r.id }); });
 route('POST', '/__test/reject', (req, res, b) => {
@@ -303,10 +304,11 @@ route('POST', '/login/request', (req, res, b) => {
     r.challengeCode = '47';
     Object.assign(pairing, { state: 'requested', requestId: r.id });
   }
+  r.expiresAt = new Date(Date.now() + 30000).toISOString();
   state.requests.push(r);
   const why = [...(r.requiresPasskey ? ['passkey_required'] : []), ...(action.critical ? ['critical_action'] : []), ...(state.opts.numberMatch ? ['number_match_requested'] : [])];
   send(res, 200, {
-    message: 'Request sent', requestId: r.id, challengeCode: r.challengeCode, expiresAt: new Date(Date.now() + 30000).toISOString(), requiresPasskey: r.requiresPasskey,
+    message: 'Request sent', requestId: r.id, challengeCode: r.challengeCode, expiresAt: r.expiresAt, requiresPasskey: r.requiresPasskey,
     caseCode: 'K7P-2QX', ...(why.length && { reasons: reasons(...why) }),
     ...(state.opts.telemetry && { telemetryToken: 'tt_test' }),
     ...(state.opts.canary && { canary: { url: `http://127.0.0.1:${server.address().port}/c/canary-${r.id}.gif` } }),
@@ -323,6 +325,8 @@ route('GET', '/login/status/([^/]+)', (req, res, b, m) => {
   send(res, 200, {
     status: r.status, externalUsername: r.user, type: r.type, referenceId: r.referenceId, details: r.details, consumed: r.consumed,
     requiresPasskey: r.requiresPasskey, confirmedVia: r.confirmedVia || null, assurance: r.status === 'CONFIRMED' ? assurance(r) : null,
+    // The request's live expiry, as the API answers it (a Vishing Shield escalation extends it).
+    ...(r.expiresAt && { expiresAt: r.expiresAt }),
     ...(r.status === 'CONFIRMED' && r.replyAnswer && { reply: r.replyAnswer }),
     ...(r.status === 'REJECTED' && r.rejectReason && { rejectReason: r.rejectReason }),
     ...(r.pairing && { pairing: r.pairing }),

@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file. The
 format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [5.2.0] — 2026-11-13
+
+### Fixed
+- **`Touchque::Guard.run(nil, ...)` no longer raises `NoMethodError`.** `nil` is `Touchque::Guard.default_client` (`Touchque.client`, built on the first request that needs it and kept once built; a failed build is tried again on the next request). While it cannot be built the guard answers 500 `misconfigured` (401 `unauthenticated` without a user), logged once through `Touchque.logger`. `Touchque::Guard.status_poll?(nil, ...)` takes it too and is false while it cannot be built.
+
+### Added
+- **`Touchque::Guard.default_client = client`** makes `client` the default client (`Touchque.client`) of `Touchque::Guard.run(nil, ...)`, `status_poll?(nil, ...)` and `require_touchque`: the way to give them your own client. `nil` forgets it, so the next call builds from `config.touchque` / the environment again. `FakeTouchque#install` sets it. At boot, `Touchque.client` is the fail-fast check: it raises `Touchque::ConfigError`, naming what is missing.
+- **`Touchque::Guard.response(result, error_body: nil)`** gives `[status, headers, body]` for a result that is not an approval, Rack style, exactly as `require_touchque` and the relay send it (both use it now): the body as JSON text; `content-type`, `cache-control: no-store`, `retry-after` on 423 / 429 and `x-touchque-state` / `x-touchque-reason` on 400 and above, with lower-case names (Rack 3); `error_body:` with the 5.1 rules (a callable that raises, or a result that cannot be encoded, is logged and the default body sent). It raises `ArgumentError` for an approval.
+- **`Touchque::Testing::FakeTouchque`** (`require "touchque/testing"`): a `Touchque::Client` that answers in memory, for your app's tests, with no network, no API keys and no Node.js. The real guard runs. `link` / `unlink`, `approve` / `reject` / `expire` (the latest request or one by id; `via: "WEBAUTHN"`), `auto_approve`, `number_match`, `secret_ttl_ms`, the offline code `ABCD123` and the time-based code `123456`, `requests` and `calls`, and `install` / `uninstall` (or `install { ... }`) as `Touchque.client`. Each request keeps its expiry and answers it on its status check, like the API. `Touchque::Testing::FakeClient` is another name for it.
+- In Rails the Railtie sets `Touchque.logger` to `Rails.logger` when the app set none, so the SDK's "logged once" lines reach your log. Your own (or `nil`) in an initializer wins.
+
+### Changed
+- **Waiting polls carry `expiresAt`.** A `waiting` or `passkey_required` step with `expiresAt` puts it in its token (claim `rx`, ms since the epoch), and every later answer for that request in those two states carries `expiresAt`: the live one from Touchque's status answer when it has one (a push moved to a passkey during a call gets 180 s more), else the token's. The new token keeps the value used, and the offline QR next to the push carries it on. Only the first answer had it, so a page reading it from the latest answer never stopped by time. `Touchque::Steps.check` gives the live `expiresAt` while a request waits. With neither, polls answer as before.
+- **`enroll: false` says why.** A user with no phone on a guard that may not show the linking QR gets 202 `{"touchque":{"state":"enroll","reason":"enrollment_off"}}` instead of a bare `enroll` step: `require_touchque` and `Touchque::Guard.run` with `enroll: false`, the relay's `POST /login` without `get_login_user` and its passkey registration. `@touchque/web` 2.2.0 stops polling on it.
+- The relay's guard answers name their headers in lower case (`cache-control`, `x-touchque-state` ...), as `Touchque::Guard.response` gives them; `RelayResponse#header` reads names case-insensitively as before.
+- README: "Guard inside your handler" passes `nil` (not `Touchque.client`, which raises without keys) and answers with `Touchque::Guard.response`; it shows `Touchque::Guard.default_client =` and the fail-fast `Touchque.client` at boot, says that a new first-time QR comes about 15 s before the old one expires with new recovery codes (the old QR and codes stop working) and that a first-time QR poll is charged once the QR is gone or within about 15 s of expiring, that waiting polls carry `expiresAt`, what `enrollment_off` means, and that `passkey_required`, `offline` and an `enroll` step with a reason need `@touchque/web` or your own UI following the contract. New section "Testing your routes" with Rails and Rack request tests on `FakeTouchque`.
+
 ## [5.1.0] — 2026-11-12
 
 ### Fixed
