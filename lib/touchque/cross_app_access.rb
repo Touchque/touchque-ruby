@@ -1,15 +1,44 @@
 # frozen_string_literal: true
 
+require "strscan"
+require "uri"
+
 module Touchque
   # A refused ID-JAG or exchange (Cross App Access). +error+ is the OAuth error:
-  # invalid_grant for a bad ID-JAG, else what the server answered.
+  # invalid_grant for a bad ID-JAG, else what the server answered. +dpop_nonce+: the latest
+  # valid DPoP-Nonce the token endpoint sent during the call (RFC 9449 section 8): the retry
+  # answer's when it has one, else the first answer's; nil when it sent no valid one. For a
+  # retry by hand: CrossAppAccess.id_jag_dpop_proof(key, url, nonce: e.dpop_nonce).
   class IdJagError < Error
-    attr_reader :error, :status
+    attr_reader :error, :status, :dpop_nonce
 
-    def initialize(error, message, status = nil)
+    def initialize(error, message, status = nil, dpop_nonce: nil)
       @error = error
       @status = status
+      @dpop_nonce = dpop_nonce
       super(message)
+    end
+  end
+
+  # A DPoP key (RFC 9449, P-256) that binds an ID-JAG to its holder; keep it in this process.
+  # Make one with Touchque::CrossAppAccess.create_id_jag_dpop_key.
+  class IdJagDpopKey
+    # +thumbprint+: the RFC 7638 thumbprint, the ID-JAG's cnf.jkt.
+    attr_reader :public_jwk, :thumbprint
+
+    def initialize(signing_key)
+      @signing_key = signing_key
+      @public_jwk = signing_key.public_jwk
+      @thumbprint = AgentKeys.thumbprint(@public_jwk)
+    end
+
+    # A compact JWS signed with this key ("alg" ES256 is added to the header).
+    def jws(header, payload)
+      @signing_key.jws(header, payload)
+    end
+
+    def inspect
+      "#<Touchque::IdJagDpopKey thumbprint=#{@thumbprint}>"
     end
   end
 
@@ -25,13 +54,104 @@ module Touchque
   #                                                 id_token: id_token, audience: "https://auth.files.example")
   #   tokens = Touchque::CrossAppAccess.redeem_id_jag(token_endpoint: "https://auth.files.example/token", client_id: "acme",
   #                                                   client_secret: files_secret, assertion: jag["assertion"])
+  #
+  # Sender-constrained with DPoP (RFC 9449), optional: give the same key to both calls. The
+  # ID-JAG is then bound to it (cnf.jkt) and is useless to anyone who copies it without the key.
+  # A token endpoint that asks for a nonce (use_dpop_nonce with a valid DPoP-Nonce header) gets
+  # the same request once more, with a new proof that carries it. A DPoP-bound access token goes
+  # to the resource with a proof for that method and URL that carries the token's hash (ath).
+  #
+  #   dpop_key = Touchque::CrossAppAccess.create_id_jag_dpop_key
+  #   jag = Touchque::CrossAppAccess.request_id_jag(..., dpop_key: dpop_key)   # jag["dpop_bound"]
+  #   tokens = Touchque::CrossAppAccess.redeem_id_jag(..., assertion: jag["assertion"], dpop_key: dpop_key)
+  #   headers = { "Authorization" => "DPoP #{tokens["access_token"]}",
+  #               "DPoP" => Touchque::CrossAppAccess.id_jag_dpop_proof(dpop_key, url, method: "GET", access_token: tokens["access_token"]) }
   module CrossAppAccess
     ID_JAG_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:id-jag"
     ID_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:id_token"
     TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"
     JWT_BEARER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 
+    # RFC 9449 section 8.1: DPoP-Nonce = 1*NQCHAR (printable ASCII except space, " and \).
+    NONCE_SYNTAX = /\A[\x21\x23-\x5B\x5D-\x7E]++\z/
+    # RFC 9110 section 5.6.2: an HTTP method is a token (1*tchar).
+    METHOD_SYNTAX = /\A[!#$%&'*+\-.^_`|~0-9A-Za-z]++\z/
+    # WWW-Authenticate pieces (RFC 9110 section 11.6.1), each matched once where the scanner stands,
+    # with possessive quantifiers: they never backtrack, so a long header costs linear time.
+    CHALLENGE_SPACE = /[ \t]++/
+    CHALLENGE_TOKEN = /[!#$%&'*+\-.^_`|~0-9A-Za-z]++/
+    CHALLENGE_QUOTED = /"((?:[^"\\]++|\\.)*+)"/m
+    # The rest of a list element that is not read (token68, a malformed piece): up to the next
+    # comma outside a quoted string.
+    CHALLENGE_REST = /(?:[^",]++|"(?:[^"\\]++|\\.)*+"?)*+/m
+    private_constant :NONCE_SYNTAX, :METHOD_SYNTAX, :CHALLENGE_SPACE, :CHALLENGE_TOKEN, :CHALLENGE_QUOTED, :CHALLENGE_REST
+
     module_function
+
+    # A fresh DPoP key for request_id_jag and redeem_id_jag.
+    def create_id_jag_dpop_key
+      IdJagDpopKey.new(SigningKey.new_es256)
+    end
+
+    # A DPoP proof (RFC 9449) for one request to +url+ with +key+: a POST to a token endpoint by
+    # default. For a call to the resource, give its +method+ (trimmed and sent upper-case; empty
+    # means POST) and the DPoP-bound +access_token+ it carries (ath, the token's SHA-256); +nonce+:
+    # the server's DPoP-Nonce. The header's jwk is the key's public part only (kty, crv, x, y).
+    # htu is +url+ with scheme and host lowercased, the default port dropped, "/" for an empty
+    # path, the path as given (dot segments and percent-encoding are not changed), and no
+    # userinfo, query or fragment. ConfigError for a URL that is not absolute http(s), a method
+    # that is not an HTTP token (RFC 9110), a nonce that is not DPoP-Nonce syntax, or a key that is
+    # not a P-256 key.
+    def id_jag_dpop_proof(key, url, method: "POST", access_token: nil, nonce: nil)
+      jwk = dpop_jwk(key)
+      claims = { "htm" => dpop_htm(method), "htu" => dpop_htu(url), "iat" => Util.now, "jti" => Util.random_hex(16) }
+      claims["ath"] = AgentKeys.access_token_hash(access_token.to_s) unless access_token.to_s.empty?
+      unless nonce.to_s.empty?
+        value = nonce_value(nonce)
+        raise ConfigError, "a DPoP nonce is printable ASCII without spaces, double quotes or backslashes (RFC 9449)" unless value
+
+        claims["nonce"] = value
+      end
+      key.jws({ "typ" => "dpop+jwt", "jwk" => jwk }, claims)
+    end
+
+    # The proof header's jwk, rebuilt from +key+ as exactly kty, crv, x and y: no other member
+    # of whatever key object it is (never d) goes along.
+    def dpop_jwk(key)
+      pub = key.respond_to?(:public_jwk) && key.respond_to?(:jws) ? Util.stringify(key.public_jwk) : nil
+      unless pub.is_a?(Hash) && pub["kty"] == "EC" && pub["crv"] == "P-256" && [pub["x"], pub["y"]].all? { |v| v.is_a?(String) && !v.empty? }
+        raise ConfigError, "a DPoP proof needs a P-256 key from Touchque::CrossAppAccess.create_id_jag_dpop_key"
+      end
+
+      { "kty" => "EC", "crv" => "P-256", "x" => pub["x"], "y" => pub["y"] }
+    end
+
+    # The proof's htm: +method+ trimmed and upper-cased, POST when empty.
+    def dpop_htm(method)
+      htm = method.to_s.b.strip.upcase
+      return "POST" if htm.empty?
+      raise ConfigError, "a DPoP proof's method must be an HTTP method such as GET or POST: #{method.inspect}" unless htm.match?(METHOD_SYNTAX)
+
+      htm.force_encoding(Encoding::UTF_8)
+    end
+
+    # A DPoP proof's htu for +url+: scheme://host[:port]/path with scheme and host lowercased,
+    # the default port dropped, "/" for an empty path, the path as given (dot segments and
+    # percent-encoding are not changed), and no userinfo, query or fragment.
+    def dpop_htu(url)
+      uri = URI.parse(url.to_s)
+      raise URI::InvalidURIError unless %w[http https].include?(uri.scheme.to_s.downcase) && !uri.host.to_s.empty?
+
+      "#{uri.scheme.downcase}://#{uri.host.downcase}#{uri.port == uri.default_port ? "" : ":#{uri.port}"}#{uri.path.empty? ? "/" : uri.path}"
+    rescue URI::InvalidURIError
+      raise ConfigError, "a DPoP proof needs an absolute http(s) URL: #{url}"
+    end
+
+    # +value+ as a DPoP nonce (1*NQCHAR, RFC 9449 section 8.1) in UTF-8, or nil when it is not one.
+    def nonce_value(value)
+      bytes = value.to_s.b
+      bytes.match?(NONCE_SYNTAX) ? bytes.force_encoding(Encoding::UTF_8) : nil
+    end
 
     # https, or http on this machine (tests).
     def safe_url?(url)
@@ -56,7 +176,17 @@ module Touchque
       meta
     end
 
-    def post_form(url, fields, basic = nil)
+    # A form POST to a token endpoint: its JSON answer, or IdJagError. With +dpop_key+ every try
+    # carries a fresh proof, and a server that asks for a nonce (RFC 9449 section 8) gets the same
+    # request once more with a proof that carries it; never a third time.
+    def post_form(url, fields, basic = nil, dpop_key = nil)
+      token_request(url, fields, basic, dpop_key)[0]
+    end
+
+    # post_form, also giving the latest valid DPoP-Nonce the server sent: [answer, nonce or nil].
+    # The retry happens only for one valid nonce; a missing, empty, invalid or conflicting
+    # DPoP-Nonce header leaves the refusal as it is.
+    def token_request(url, fields, basic, dpop_key)
       raise ConfigError, "#{url} must be an https URL" unless safe_url?(url)
 
       headers = { "Content-Type" => "application/x-www-form-urlencoded" }
@@ -64,12 +194,88 @@ module Touchque
         raw = "#{URI.encode_www_form_component(basic[0]).gsub("+", "%20")}:#{URI.encode_www_form_component(basic[1]).gsub("+", "%20")}"
         headers["Authorization"] = "Basic #{[raw].pack("m0")}"
       end
-      status, text, = Transport.call("POST", url, headers: headers, body: Transport.form(fields), timeout: 10)
-      data = Util.parse_json(text)
-      data = {} unless data.is_a?(Hash)
-      raise IdJagError.new((data["error"] || "server_error").to_s, (data["error_description"] || "#{url} answered #{status}").to_s, status) if status >= 400
+      body = Transport.form(fields)
+      attempt = lambda do |nonce|
+        headers["DPoP"] = id_jag_dpop_proof(dpop_key, url, nonce: nonce) if dpop_key
+        status, text, res = Transport.call("POST", url, headers: headers, body: body, timeout: 10)
+        data = Util.parse_json(text)
+        [status, data.is_a?(Hash) ? data : {}, res, dpop_nonce_of(res)]
+      end
+      status, data, res, nonce = attempt.call(nil)
+      if dpop_key && nonce && use_dpop_nonce?(status, data, res)
+        status, data, _, retry_nonce = attempt.call(nonce)
+        nonce = retry_nonce || nonce
+      end
+      if status >= 400
+        raise IdJagError.new((data["error"] || "server_error").to_s, (data["error_description"] || "#{url} answered #{status}").to_s, status,
+                             dpop_nonce: nonce)
+      end
 
-      data
+      [data, nonce]
+    end
+
+    # Every value of the answer's header +name+, one per field line.
+    def header_values(res, name)
+      res.respond_to?(:get_fields) ? Array(res.get_fields(name)) : []
+    end
+
+    # The answer's DPoP-Nonce (RFC 9449 section 8) when it is one valid value: nil when the header
+    # is missing, empty, not 1*NQCHAR, or repeated with different values.
+    def dpop_nonce_of(res)
+      values = header_values(res, "DPoP-Nonce").uniq
+      values.length == 1 ? nonce_value(values[0]) : nil
+    end
+
+    # Whether a token endpoint's answer asks for a nonce in the proof (RFC 9449 section 8): 400 or
+    # 401 with error use_dpop_nonce in its JSON body, or 401 with it in a DPoP challenge.
+    def use_dpop_nonce?(status, data, res)
+      return false unless [400, 401].include?(status)
+      return true if data["error"] == "use_dpop_nonce"
+
+      status == 401 && header_values(res, "WWW-Authenticate").any? { |field| dpop_nonce_challenge?(field) }
+    end
+
+    # Whether one WWW-Authenticate field value holds a DPoP challenge with error use_dpop_nonce
+    # (RFC 9449 section 9). Challenges and their auth-params as RFC 9110 section 11.6.1 writes
+    # them; a parameter belongs to the challenge before it, and a malformed list element is
+    # skipped. One pass over the bytes with patterns that never backtrack: linear time, and no
+    # exception for any input.
+    def dpop_nonce_challenge?(field)
+      s = StringScanner.new(field.to_s.b)
+      scheme = nil
+      after_scheme = false # an auth-scheme and spaces just read: a token68 may follow
+      until s.eos?
+        next if s.skip(CHALLENGE_SPACE)
+
+        if s.skip(/,/)
+          after_scheme = false
+          next
+        end
+        token = s.scan(CHALLENGE_TOKEN)
+        unless token
+          s.skip(CHALLENGE_REST)
+          next
+        end
+        s.skip(CHALLENGE_SPACE)
+        if s.skip(/=/)
+          s.skip(CHALLENGE_SPACE)
+          value = s.scan(CHALLENGE_QUOTED) ? s[1].gsub(/\\(.)/m, "\\1") : s.scan(CHALLENGE_TOKEN)
+          s.skip(CHALLENGE_SPACE)
+          if value && (s.eos? || s.check(/,/))
+            return true if scheme&.casecmp?("DPoP") && token.casecmp?("error") && value == "use_dpop_nonce"
+          else
+            s.skip(CHALLENGE_REST)
+          end
+          after_scheme = false
+        elsif after_scheme
+          s.skip(CHALLENGE_REST)
+          after_scheme = false
+        else
+          scheme = token
+          after_scheme = true
+        end
+      end
+      false
     end
 
     def scope_text(scope)
@@ -77,39 +283,61 @@ module Touchque
     end
 
     # Trades a member's ID token for an ID-JAG at the identity provider (token exchange,
-    # client_secret_basic): { "assertion", "expires_in", "scope" }.
-    def request_id_jag(client_id:, client_secret:, id_token:, audience:, issuer: nil, token_endpoint: nil, resource: nil, scope: nil)
+    # client_secret_basic): { "assertion", "expires_in", "scope" }. With +dpop_key+ the ID-JAG is bound
+    # to that key (redeem it with the same key) and "dpop_bound" says whether the returned ID-JAG
+    # carries its thumbprint.
+    def request_id_jag(client_id:, client_secret:, id_token:, audience:, issuer: nil, token_endpoint: nil, resource: nil, scope: nil,
+                       dpop_key: nil)
       unless token_endpoint
         raise ConfigError, "request_id_jag needs issuer or token_endpoint" if issuer.to_s.empty?
 
         token_endpoint = discover(issuer)["token_endpoint"]
         raise ConfigError, "the identity provider names no token_endpoint" unless token_endpoint.is_a?(String)
       end
-      data = post_form(token_endpoint, {
-                         "grant_type" => TOKEN_EXCHANGE_GRANT, "requested_token_type" => ID_JAG_TOKEN_TYPE,
-                         "subject_token" => id_token, "subject_token_type" => ID_TOKEN_TYPE,
-                         "audience" => audience, "resource" => resource, "scope" => scope_text(scope)
-                       }, [client_id, client_secret])
+      data, nonce = token_request(token_endpoint, {
+                                    "grant_type" => TOKEN_EXCHANGE_GRANT, "requested_token_type" => ID_JAG_TOKEN_TYPE,
+                                    "subject_token" => id_token, "subject_token_type" => ID_TOKEN_TYPE,
+                                    "audience" => audience, "resource" => resource, "scope" => scope_text(scope)
+                                  }, [client_id, client_secret], dpop_key)
       unless data["issued_token_type"] == ID_JAG_TOKEN_TYPE && data["access_token"].is_a?(String)
-        raise IdJagError.new("invalid_response", "the identity provider did not answer with an ID-JAG")
+        raise IdJagError.new("invalid_response", "the identity provider did not answer with an ID-JAG", nil, dpop_nonce: nonce)
       end
 
-      { "assertion" => data["access_token"], "expires_in" => data["expires_in"], "scope" => data["scope"] }
+      out = { "assertion" => data["access_token"], "expires_in" => data["expires_in"], "scope" => data["scope"] }
+      if dpop_key
+        # An identity provider without DPoP support ignores the proof: say so instead of guessing.
+        cnf = JWS.split(data["access_token"])&.[](1)&.[]("cnf")
+        out["dpop_bound"] = cnf.is_a?(Hash) && cnf["jkt"].is_a?(String) && cnf["jkt"] == dpop_key.thumbprint
+      end
+      out
     end
 
     # Trades an ID-JAG for an access token at the other service's authorization server (jwt-bearer).
-    def redeem_id_jag(token_endpoint:, client_id:, assertion:, client_secret: nil, resource: nil, scope: nil)
+    # With +dpop_key+ (the key the ID-JAG is bound to) a DPoP proof goes along; the access token is
+    # then DPoP-bound too: send it as "Authorization: DPoP <token>" with
+    # id_jag_dpop_proof(dpop_key, url, method:, access_token:) on each call.
+    def redeem_id_jag(token_endpoint:, client_id:, assertion:, client_secret: nil, resource: nil, scope: nil, dpop_key: nil)
       fields = { "grant_type" => JWT_BEARER_GRANT, "assertion" => assertion, "resource" => resource, "scope" => scope_text(scope) }
       fields["client_id"] = client_id if client_secret.to_s.empty?
-      post_form(token_endpoint, fields, client_secret.to_s.empty? ? nil : [client_id, client_secret])
+      post_form(token_endpoint, fields, client_secret.to_s.empty? ? nil : [client_id, client_secret], dpop_key)
     end
+
+    # Helpers of id_jag_dpop_proof, request_id_jag and redeem_id_jag, not part of the API.
+    private_class_method :dpop_jwk, :dpop_htm, :dpop_htu, :nonce_value, :token_request, :header_values, :dpop_nonce_of,
+                         :use_dpop_nonce?, :dpop_nonce_challenge?
   end
 
   # Your authorization server, taking ID-JAGs from an organization's identity provider:
-  # checks the one an authenticated client presents (jwt-bearer grant) and uses it once.
+  # checks the one an authenticated client presents (jwt-bearer grant) and uses it once. Build it
+  # once, at boot, not per request: the jtis it took and the identity provider's keys live in it.
   #
   #   verifier = Touchque::IdJagVerifier.new(issuer: "https://sso.touchque.com", audience: "https://auth.files.example")
   #   claims = verifier.verify(params[:assertion], client_id: authenticated_client_id)
+  #
+  # An authorization server that checks DPoP proofs passes the proof key's thumbprint; a bound
+  # ID-JAG without it is refused:
+  #
+  #   claims = verifier.verify(params[:assertion], client_id: authenticated_client_id, dpop_jkt: proof_jkt)
   #
   # +first_use+ (a callable jti, exp → true when new) lets several processes share a
   # store such as Redis SET NX; memory in this process by default.
@@ -133,7 +361,9 @@ module Touchque
     end
 
     # The ID-JAG, checked and used once: its claims, or IdJagError (error invalid_grant).
-    def verify(assertion, client_id:)
+    # +dpop_jkt+: the thumbprint of the DPoP proof you verified on this request, if any; an
+    # ID-JAG bound to a key (cnf.jkt) is refused without a matching one.
+    def verify(assertion, client_id:, dpop_jkt: nil)
       bad = ->(message) { IdJagError.new("invalid_grant", message) }
       parts = JWS.split(assertion)
       raise bad.call("assertion is not a JWT") unless parts
@@ -157,6 +387,16 @@ module Touchque
       raise bad.call("expired") unless c["exp"].is_a?(Numeric) && c["exp"] + @skew >= now
       raise bad.call("issued in the future") unless c["iat"].is_a?(Numeric) && c["iat"] - @skew <= now
       raise bad.call("sub and jti are required") unless c["sub"].is_a?(String) && c["jti"].is_a?(String)
+      # Before the jti is spent: a copy without the key cannot use the ID-JAG up.
+      cnf_jkt = nil
+      if c.key?("cnf")
+        cnf = c["cnf"]
+        raise bad.call("unsupported confirmation method (only DPoP cnf.jkt)") unless cnf.is_a?(Hash) && cnf["jkt"].is_a?(String)
+        raise bad.call("bound to a DPoP key: a DPoP proof with that key is required") if dpop_jkt.to_s.empty?
+        raise bad.call("the DPoP proof was made with another key") unless dpop_jkt == cnf["jkt"]
+
+        cnf_jkt = cnf["jkt"]
+      end
       raise bad.call("already used") unless @first_use.call(c["jti"], c["exp"].to_i)
 
       {
@@ -164,7 +404,7 @@ module Touchque
         "issued_at" => c["iat"].to_i, "expires_at" => c["exp"].to_i,
         "scopes" => c["scope"].is_a?(String) && !c["scope"].empty? ? c["scope"].split(" ") : [],
         "resource" => c["resource"], "tenant" => c["tenant"], "email" => c["email"], "auth_time" => c["auth_time"], "amr" => c["amr"],
-        "claims" => c
+        "cnf_jkt" => cnf_jkt, "claims" => c
       }
     end
 
