@@ -193,10 +193,21 @@ class IdJagDpopTest < Minitest::Test
 
   # A token endpoint on 127.0.0.1 that records every request ({"path", "headers", "body"}) and
   # answers the n-th one with reply.call(n): [status, header lines (a Hash or [name, value] pairs,
-  # any bytes), JSON body].
+  # any bytes), body (a Hash or Array as JSON, a String as it is)].
   def with_token_endpoint(reply)
+    with_raw_endpoint(lambda do |n|
+      status, extra, out = reply.call(n)
+      raw_answer(status, extra, out.is_a?(String) ? out : JSON.generate(out))
+    end) { |url, requests| yield url, requests }
+  end
+
+  # A server on 127.0.0.1 (a raw socket: Net::HTTP reads exactly these bytes) that records every
+  # request ({"path", "headers", "body"}) and answers the n-th one with reply.call(n): the bytes
+  # to send, :close to close the connection without an answer, or :hang to never answer.
+  def with_raw_endpoint(reply)
     server = TCPServer.new("127.0.0.1", 0)
     requests = []
+    hanging = []
     thread = Thread.new do
       loop do
         conn = server.accept
@@ -207,17 +218,46 @@ class IdJagDpopTest < Minitest::Test
           headers[name.strip.downcase] = value.to_s.strip
         end
         requests << { "path" => path, "headers" => headers, "body" => conn.read(headers["content-length"].to_i) }
-        status, extra, out = reply.call(requests.length)
-        text = JSON.generate(out)
-        conn.write("HTTP/1.1 #{status} Answer\r\n", *extra.map { |k, v| "#{k}: ".b + v.to_s.b + "\r\n".b },
-                   "Content-Type: application/json\r\nContent-Length: #{text.bytesize}\r\nConnection: close\r\n\r\n", text)
+        answer = reply.call(requests.length)
+        if answer == :hang
+          hanging << conn
+          next
+        end
+        conn.write(answer) unless answer == :close
         conn.close
       end
     end
     yield "http://127.0.0.1:#{server.addr[1]}/token", requests
   ensure
     thread&.kill
+    hanging&.each(&:close)
     server&.close
+  end
+
+  # An HTTP/1.1 answer as bytes: status, header lines (a Hash or [name, value] pairs, any bytes)
+  # and the body, with Content-Type, Content-Length and Connection: close.
+  def raw_answer(status, extra = {}, body = "")
+    body = body.b
+    ["HTTP/1.1 #{status} Answer\r\n", *extra.map { |k, v| "#{k}: ".b + v.to_s.b + "\r\n".b },
+     "Content-Type: application/json\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n"].map(&:b).join + body
+  end
+
+  # A URL on 127.0.0.1 where nothing listens: the connection is refused.
+  def refused_url
+    server = TCPServer.new("127.0.0.1", 0)
+    "http://127.0.0.1:#{server.addr[1]}/token"
+  ensure
+    server&.close
+  end
+
+  def request_jag(url, **options)
+    Touchque::CrossAppAccess.request_id_jag(token_endpoint: url, client_id: "tqapp_test", client_secret: "tqs_test", id_token: "idtoken:ada",
+                                            audience: "https://rs.example", **options)
+  end
+
+  # Both token-endpoint calls, by name.
+  def token_calls
+    { "request_id_jag" => ->(url, **o) { request_jag(url, **o) }, "redeem_id_jag" => ->(url, **o) { redeem(url, **o) } }
   end
 
   def test_proof_shape_with_the_old_call_form
@@ -255,18 +295,33 @@ class IdJagDpopTest < Minitest::Test
   end
 
   def test_proof_method_is_trimmed_upper_cased_and_a_token
-    { " get " => "GET", "\tdelete\r\n" => "DELETE", "   " => "POST", "\n" => "POST", "m-search" => "M-SEARCH", :propfind => "PROPFIND" }.each do |method, htm|
+    {
+      " get " => "GET", "\tdelete\r\n" => "DELETE", "\v\fpatch\f\v" => "PATCH", " \t\r\n\v\fput \t\r\n\v\f" => "PUT", "   " => "POST", "\n" => "POST",
+      "\v\f" => "POST", "m-search" => "M-SEARCH", :propfind => "PROPFIND"
+    }.each do |method, htm|
       assert_equal htm, payload_of(proof(method: method))["htm"], method.inspect
     end
-    ["GET /x", "GE T", "GÉT", "GET\r\nX-Evil: 1", "(GET)", "GET,POST", "get ", "\xff".b, "{}"].each do |method|
+    # Only ASCII whitespace is trimmed: NUL, other control characters and Unicode spaces stay, and
+    # are not HTTP token characters.
+    ["GET /x", "GE T", "G\u00C9T", "GET\r\nX-Evil: 1", "(GET)", "GET,POST", "get\u00A0", "\u00A0GET", "GET\u2003", "\u3000GET", "\u0085GET",
+     "\u200BGET", "\0GET", "GET\0", "\0", " \0 ", "\x1CGET", "GET\x1F", "\xFF".b, "{}"].each do |method|
       assert_raises(Touchque::ConfigError, method.inspect) { proof(method: method) }
     end
   end
 
-  def test_proof_nonce_is_dpop_nonce_syntax
+  def test_a_nonce_given_by_hand_goes_in_as_it_is
     every = [0x21, *0x23..0x5B, *0x5D..0x7E].pack("C*") # each NQCHAR once
     assert_equal every, payload_of(proof(nonce: every))["nonce"]
-    ["a b", %(a"b), "a\\b", "nönce", "\xff".b, "a\tb", "\x7f"].each do |nonce|
+    # Not checked against the DPoP-Nonce syntax: the server judges the nonce it asked for.
+    ["a b", %(a"b), "a\\b", "nönce", "a\tb", "\x7F", "a\0b", " ", "n" * 65_536].each do |nonce|
+      assert_equal nonce, payload_of(proof(nonce: nonce))["nonce"], nonce.inspect[0, 40]
+    end
+    assert_equal "nönce", payload_of(proof(nonce: "nönce".b))["nonce"]
+    assert_equal "café", payload_of(proof(nonce: "caf\xE9".dup.force_encoding(Encoding::ISO_8859_1)))["nonce"]
+    assert_equal "123", payload_of(proof(nonce: 123))["nonce"]
+    [nil, ""].each { |empty| refute payload_of(proof(nonce: empty)).key?("nonce"), empty.inspect }
+    # JSON carries text only.
+    ["\xFF".b, "n\xC3".dup.force_encoding(Encoding::UTF_8)].each do |nonce|
       assert_raises(Touchque::ConfigError, nonce.inspect) { proof(nonce: nonce) }
     end
   end
@@ -304,13 +359,15 @@ class IdJagDpopTest < Minitest::Test
     }.each do |url, htu|
       assert_equal htu, payload_of(Touchque::CrossAppAccess.id_jag_dpop_proof(key, url))["htu"], url
     end
-    ["/token", "token.example/token", "ftp://host.example/x", "https://exa mple.com/", "http:///x", "https://host.example/ü", nil].each do |url|
+    ["/token", "token.example/token", "ftp://host.example/x", "https://exa mple.com/", "http:///x", "https://host.example/ü", nil, 5,
+     "mailto:a@host.example", "https:host.example", "https://host.example/x".encode(Encoding::UTF_16LE)].each do |url|
       assert_raises(Touchque::ConfigError, url.inspect) { Touchque::CrossAppAccess.id_jag_dpop_proof(key, url) }
     end
   end
 
   def test_the_proof_and_token_endpoint_helpers_are_private
-    %i[dpop_htu dpop_nonce_of use_dpop_nonce? dpop_jwk dpop_htm nonce_value token_request header_values dpop_nonce_challenge?].each do |name|
+    %i[dpop_htu dpop_nonce_of use_dpop_nonce? dpop_jwk dpop_htm nonce_value nonce_claim token_request answer_json error_code header_values
+       dpop_nonce_challenge?].each do |name|
       refute_respond_to Touchque::CrossAppAccess, name
       assert_includes Touchque::CrossAppAccess.private_methods, name
     end
@@ -429,16 +486,20 @@ class IdJagDpopTest < Minitest::Test
       { "DPoP-Nonce" => "\xff\xfe".b },
       { "DPoP-Nonce" => "tab\there" },
       { "DPoP-Nonce" => "del\x7f" },
-      [["DPoP-Nonce", "n-1"], ["DPoP-Nonce", "n-2"]]
+      { "DPoP-Nonce" => "nul\x00byte" },
+      { "DPoP-Nonce" => "ctl\x01\x02" },
+      { "DPoP-Nonce" => "#{"n" * 65_535} x" },
+      [["DPoP-Nonce", "n-1"], ["DPoP-Nonce", "n-2"]],
+      [["DPoP-Nonce", "n-1"], ["DPoP-Nonce", "n 1"]]
     ].each do |lines|
       with_token_endpoint(->(_) { [400, lines, { "error" => "use_dpop_nonce" }] }) do |url, requests|
         err = assert_raises(Touchque::IdJagError, lines.inspect) { redeem(url, dpop_key: key) }
         assert_equal [1, "use_dpop_nonce", 400, nil], [requests.length, err.error, err.status, err.dpop_nonce], lines.inspect
       end
     end
-    # One value, even sent twice, of NQCHARs only: retried with it as it is.
+    # One value, even sent twice, of NQCHARs only (a 64 KB header line too): retried with it as it is.
     every = [0x21, *0x23..0x5B, *0x5D..0x7E].pack("C*")
-    [[["DPoP-Nonce", every]], [["DPoP-Nonce", NONCE], ["DPoP-Nonce", NONCE]]].each do |lines|
+    [[["DPoP-Nonce", every]], [["DPoP-Nonce", NONCE], ["DPoP-Nonce", NONCE]], [["DPoP-Nonce", "n" * 65_536]]].each do |lines|
       reply = ->(n) { n == 1 ? [400, lines, { "error" => "use_dpop_nonce" }] : [200, {}, { "access_token" => "at" }] }
       with_token_endpoint(reply) do |url, requests|
         assert_equal "at", redeem(url, dpop_key: key)["access_token"]
@@ -472,6 +533,8 @@ class IdJagDpopTest < Minitest::Test
     assert asks.call(401, { "error" => "use_dpop_nonce" })
     refute asks.call(403, { "error" => "use_dpop_nonce" })
     refute asks.call(400, {}, challenge.call(%(DPoP error="use_dpop_nonce")))
+    # A body that is JSON but not an object, or not JSON at all.
+    [nil, ["use_dpop_nonce"], "use_dpop_nonce", 5].each { |data| refute asks.call(400, data), data.inspect }
     {
       %(DPoP error="use_dpop_nonce") => true,
       %(Bearer realm="files", DPoP algs="ES256", error="use_dpop_nonce") => true,
@@ -531,6 +594,203 @@ class IdJagDpopTest < Minitest::Test
       "Bearer #{realms}DPoP error=\"use_dpop_nonce\"" => true
     }.each do |text, want|
       assert_equal want, within_a_second { Touchque::CrossAppAccess.send(:use_dpop_nonce?, 401, {}, http_answer(401, ["WWW-Authenticate", text])) }
+    end
+  end
+
+  # Net::HTTP with the read timeout Thread.current[:touchque_test_read_timeout] when it is set: the
+  # SDK's own 10 s timeout, shortened for a test.
+  module ShortReadTimeout
+    def request(req, body = nil, &block)
+      seconds = Thread.current[:touchque_test_read_timeout]
+      self.read_timeout = seconds if seconds
+      super
+    end
+  end
+  Net::HTTP.prepend(ShortReadTimeout)
+
+  def test_a_token_endpoint_that_cannot_be_reached_is_temporarily_unavailable
+    # Nothing listens: refused. No status, no nonce, and the network error as the cause.
+    token_calls.each do |name, call|
+      [nil, key].each do |dpop_key|
+        err = assert_raises(Touchque::IdJagError, name) { call.call(refused_url, dpop_key: dpop_key) }
+        assert_equal ["temporarily_unavailable", nil, nil], [err.error, err.status, err.dpop_nonce], name
+        assert_kind_of Touchque::NetworkError, err.cause
+        assert_kind_of SystemCallError, err.cause.cause
+      end
+    end
+    # The identity provider's metadata (issuer: discovery) is not a token endpoint: as before.
+    assert_raises(Touchque::NetworkError) do
+      Touchque::CrossAppAccess.request_id_jag(issuer: refused_url.delete_suffix("/token"), client_id: "c", client_secret: "s", id_token: "t", audience: "a")
+    end
+    # An answer Net::HTTP cannot take, sent byte by byte from a raw socket: the same.
+    ok = '{"access_token":"at"}'
+    {
+      "closed without an answer" => :close,
+      "not HTTP" => "HELLO\r\n\r\n",
+      "a header line without a colon" => "HTTP/1.1 200 OK\r\nno colon here\r\nContent-Length: 2\r\n\r\n{}",
+      "a Content-Length that is not a number" => "HTTP/1.1 200 OK\r\nContent-Length: two\r\nConnection: close\r\n\r\n{}",
+      "a body cut short" => "HTTP/1.1 200 OK\r\nContent-Length: #{ok.bytesize + 10}\r\nConnection: close\r\n\r\n#{ok}",
+      "a broken chunked body" => "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\nzz\r\n#{ok}\r\n0\r\n\r\n",
+      "a gzip body that does not decompress" => "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: 5\r\nConnection: close\r\n\r\nabcde"
+    }.each do |what, answer|
+      token_calls.each do |name, call|
+        with_raw_endpoint(->(_) { answer }) do |url, requests|
+          err = assert_raises(Touchque::IdJagError, "#{name}: #{what}") { call.call(url, dpop_key: key) }
+          assert_equal ["temporarily_unavailable", nil, nil, 1], [err.error, err.status, err.dpop_nonce, requests.length], "#{name}: #{what}"
+          assert_kind_of(what.include?("gzip") ? Zlib::Error : Touchque::NetworkError, err.cause, "#{name}: #{what}")
+        end
+      end
+    end
+    # Control bytes in a header and a 64 KB header line are read: a 2xx answer is the answer.
+    big = raw_answer(200, [["X-Control", "a\x01\x02\x7fb"], ["X-Long", "a" * 65_536]], ok)
+    with_raw_endpoint(->(_) { big }) { |url, _| assert_equal "at", redeem(url, dpop_key: key)["access_token"] }
+  end
+
+  def test_a_body_cut_short_is_caught_on_any_net_http
+    # A Net::HTTP without ignore_eof= (or with it true, the default here) reads a body cut short
+    # as it came: the transport's own length check catches it.
+    whole = lambda do |raw|
+      result = nil
+      with_raw_endpoint(->(_) { raw }) do |url, _|
+        uri = URI(url)
+        res = Net::HTTP.start(uri.host, uri.port) { |http| http.request(Net::HTTP::Get.new(uri.path)) }
+        result = Touchque::Transport.send(:whole_body?, res)
+      end
+      result
+    end
+    refute whole.call("HTTP/1.1 200 OK\r\nContent-Length: 30\r\nConnection: close\r\n\r\n{}")
+    assert whole.call("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+    assert whole.call("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{}") # no length: up to the end
+    assert whole.call("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 30\r\nConnection: close\r\n\r\n2\r\n{}\r\n0\r\n\r\n")
+    assert whole.call("HTTP/1.1 204 No Content\r\nContent-Length: 30\r\nConnection: close\r\n\r\n")
+    refute_respond_to Touchque::Transport, :whole_body?
+  end
+
+  def test_a_retry_that_gets_no_answer_keeps_the_first_answers_nonce
+    asks = raw_answer(400, { "DPoP-Nonce" => NONCE }, '{"error":"use_dpop_nonce"}')
+    [:close, "HELLO\r\n\r\n", "HTTP/1.1 200 OK\r\nContent-Length: 50\r\nConnection: close\r\n\r\n{}"].each do |second|
+      token_calls.each do |name, call|
+        with_raw_endpoint(->(n) { n == 1 ? asks : second }) do |url, requests|
+          err = assert_raises(Touchque::IdJagError, name) { call.call(url, dpop_key: key) }
+          assert_equal ["temporarily_unavailable", nil, NONCE, 2], [err.error, err.status, err.dpop_nonce, requests.length], "#{name}: #{second.inspect}"
+          assert_equal [nil, NONCE], proofs(requests).map { |p| p[1]["nonce"] }
+          assert_kind_of Touchque::NetworkError, err.cause
+        end
+      end
+    end
+  end
+
+  def test_a_timeout_is_temporarily_unavailable_but_the_callers_own_deadline_is_not_caught
+    with_raw_endpoint(->(_) { :hang }) do |url, requests|
+      Thread.current[:touchque_test_read_timeout] = 0.2
+      err = assert_raises(Touchque::IdJagError) { redeem(url, dpop_key: key) }
+      assert_equal ["temporarily_unavailable", nil, nil, 1], [err.error, err.status, err.dpop_nonce, requests.length]
+      assert_kind_of Net::ReadTimeout, err.cause.cause
+    ensure
+      Thread.current[:touchque_test_read_timeout] = nil
+    end
+    # The caller's own deadline (Timeout.timeout) stops the call as the caller's Timeout::Error.
+    with_raw_endpoint(->(_) { :hang }) do |url, _|
+      err = assert_raises(Timeout::Error) { Timeout.timeout(0.3) { redeem(url, dpop_key: key) } }
+      refute_kind_of Touchque::Error, err
+    end
+  end
+
+  def test_only_a_2xx_answer_is_a_success
+    jag = { "access_token" => "a.b.c", "issued_token_type" => Touchque::CrossAppAccess::ID_JAG_TOKEN_TYPE, "token_type" => "N_A" }
+    # A redirect is never followed, and no status but 2xx is a success.
+    [
+      [302, { "Location" => "http://127.0.0.1:9/elsewhere", "DPoP-Nonce" => NONCE }, jag, "server_error", NONCE],
+      [303, { "Location" => "/token2" }, { "error" => "invalid_request" }, "invalid_request", nil],
+      [307, { "Location" => "/token2" }, jag, "server_error", nil],
+      [308, { "Location" => "/token2" }, jag, "server_error", nil],
+      [304, {}, jag, "server_error", nil],
+      [999, {}, { "error" => "invalid_grant" }, "invalid_grant", nil]
+    ].each do |status, headers, out, code, nonce|
+      token_calls.each do |name, call|
+        with_token_endpoint(->(_) { [status, headers, out] }) do |url, requests|
+          err = assert_raises(Touchque::IdJagError, "#{name} #{status}") { call.call(url, dpop_key: key) }
+          assert_equal [code, status, nonce, 1], [err.error, err.status, err.dpop_nonce, requests.length], "#{name} #{status}"
+        end
+      end
+    end
+    [200, 201, 299].each do |status|
+      with_token_endpoint(->(_) { [status, {}, jag] }) do |url, _|
+        assert_equal "a.b.c", request_jag(url)["assertion"]
+        assert_equal "a.b.c", redeem(url)["access_token"]
+      end
+    end
+  end
+
+  def test_a_refusals_error_is_an_rfc_6749_error_code_from_its_body
+    {
+      { "error" => "invalid_grant" } => "invalid_grant",
+      { "error" => "x" * 128 } => "x" * 128,
+      { "error" => "x" * 129 } => "server_error",
+      { "error" => " !#[]~ with spaces" } => " !#[]~ with spaces",
+      { "error" => "" } => "server_error",
+      { "error" => %(say"hi") } => "server_error",
+      { "error" => "back\\slash" } => "server_error",
+      { "error" => "tab\there" } => "server_error",
+      { "error" => "line\nbreak" } => "server_error",
+      { "error" => "del\x7f" } => "server_error",
+      { "error" => "nul\0" } => "server_error",
+      { "error" => "é" } => "server_error",
+      { "error" => 5 } => "server_error",
+      { "error" => true } => "server_error",
+      { "error" => nil } => "server_error",
+      { "error" => ["invalid_grant"] } => "server_error",
+      { "error" => { "code" => "invalid_grant" } } => "server_error",
+      {} => "server_error",
+      ["invalid_grant"] => "server_error",
+      '"invalid_grant"' => "server_error",
+      "null" => "server_error",
+      "<html>invalid_grant</html>" => "server_error",
+      "" => "server_error",
+      # Bytes that are not UTF-8 read as U+FFFD: they cost the field they are in, nothing else.
+      "{\"error\":\"invalid_grant\",\"error_description\":\"caf\xE9\"}".b => "invalid_grant",
+      "{\"error\":\"\xFF\"}".b => "server_error"
+    }.each do |out, code|
+      token_calls.each do |name, call|
+        with_token_endpoint(->(_) { [400, { "DPoP-Nonce" => NONCE }, out] }) do |url, _|
+          err = assert_raises(Touchque::IdJagError, "#{name} #{out.inspect[0, 60]}") { call.call(url) }
+          assert_equal [code, 400, NONCE], [err.error, err.status, err.dpop_nonce], "#{name} #{out.inspect[0, 60]}"
+        end
+      end
+    end
+    # Never from WWW-Authenticate: that header only decides the nonce retry.
+    with_token_endpoint(->(_) { [401, { "WWW-Authenticate" => %(DPoP error="invalid_dpop_proof", Bearer error="invalid_token") }, ""] }) do |url, _|
+      err = assert_raises(Touchque::IdJagError) { redeem(url, dpop_key: key) }
+      assert_equal ["server_error", 401], [err.error, err.status]
+    end
+    with_token_endpoint(->(_) { [401, { "WWW-Authenticate" => %(DPoP error="invalid_dpop_proof") }, { "error" => "invalid_client" }] }) do |url, _|
+      assert_equal "invalid_client", assert_raises(Touchque::IdJagError) { redeem(url, dpop_key: key) }.error
+    end
+  end
+
+  def test_a_2xx_answer_that_is_not_a_json_object_is_invalid_response
+    ["null", "[]", '[{"access_token":"at"}]', '"at"', "5", "true", "<html>hi</html>", "", "{", "\xFF\xFE".b].each do |out|
+      token_calls.each do |name, call|
+        [200, 201].each do |status|
+          with_token_endpoint(->(_) { [status, { "DPoP-Nonce" => NONCE }, out] }) do |url, requests|
+            err = assert_raises(Touchque::IdJagError, "#{name} #{status} #{out.inspect}") { call.call(url, dpop_key: key) }
+            assert_equal ["invalid_response", status, NONCE, 1], [err.error, err.status, err.dpop_nonce, requests.length], "#{name} #{out.inspect}"
+          end
+        end
+      end
+    end
+    token_calls.each do |name, call|
+      # 204 No Content: no body at all.
+      with_token_endpoint(->(_) { [204, {}, ""] }) do |url, _|
+        err = assert_raises(Touchque::IdJagError, name) { call.call(url) }
+        assert_equal ["invalid_response", 204, nil], [err.error, err.status, err.dpop_nonce], name
+      end
+      # After the nonce retry: the retry answer's nonce.
+      reply = ->(n) { n == 1 ? [400, { "DPoP-Nonce" => NONCE }, { "error" => "use_dpop_nonce" }] : [200, { "DPoP-Nonce" => "n-2" }, "null"] }
+      with_token_endpoint(reply) do |url, requests|
+        err = assert_raises(Touchque::IdJagError, name) { call.call(url, dpop_key: key) }
+        assert_equal ["invalid_response", 200, "n-2", 2], [err.error, err.status, err.dpop_nonce, requests.length], name
+      end
     end
   end
 end

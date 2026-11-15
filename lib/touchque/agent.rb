@@ -9,8 +9,9 @@ module Touchque
   module Transport
     module_function
 
-    # [status, body text, response].
-    def call(method, url, headers: {}, body: nil, timeout: 10)
+    # [status, body text, response]. +ignore_eof+ false: a body that ends before its
+    # Content-Length is a NetworkError instead of what arrived.
+    def call(method, url, headers: {}, body: nil, timeout: 10, ignore_eof: true)
       uri = URI.parse(url)
       klass = { "GET" => Net::HTTP::Get, "POST" => Net::HTTP::Post, "PUT" => Net::HTTP::Put,
                 "PATCH" => Net::HTTP::Patch, "DELETE" => Net::HTTP::Delete }.fetch(method.to_s.upcase)
@@ -22,12 +23,23 @@ module Touchque
       http.use_ssl = uri.scheme == "https"
       http.open_timeout = timeout
       http.read_timeout = timeout
+      http.ignore_eof = ignore_eof if http.respond_to?(:ignore_eof=)
       res = http.request(req)
       raise NetworkError, "the answer is larger than 10 MB" if res.body.to_s.bytesize > HTTP::MAX_RESPONSE_BYTES
+      raise NetworkError, "the answer ended before its Content-Length" unless ignore_eof || whole_body?(res)
 
       [res.code.to_i, res.body.to_s.dup.force_encoding("UTF-8"), res]
     rescue *HTTP::NETWORK_ERRORS => e
       raise NetworkError, e.message
+    end
+
+    # Whether the answer's body has every byte its Content-Length names. A Net::HTTP with
+    # ignore_eof= raises EOFError before this; an older one reads a body cut short as it came.
+    def whole_body?(res)
+      length = res["Content-Length"].to_s
+      return true unless res.class.body_permitted? && !res.chunked? && length.match?(/\A\d+\z/)
+
+      res.body.to_s.bytesize >= length.to_i
     end
 
     def form(fields)
@@ -41,6 +53,8 @@ module Touchque
       data["retryAfter"] ||= data["retry_after"].to_i if data["retry_after"]
       APIError.for(status, data, data["error_description"] || data["error"] || "Touchque API error: HTTP #{status}")
     end
+
+    private_class_method :whole_body?
   end
 
   # The agent side: an AI agent calls Touchque with its OWN key, never with your API
