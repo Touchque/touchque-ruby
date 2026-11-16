@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "ipaddr"
 require "monitor"
 require "set"
 require_relative "../touchque"
@@ -37,9 +38,22 @@ module Touchque
     # QR works (5 minutes, like the API). The offline code is "ABCD123" and the time-based
     # code "123456" (+offline_code+, +totp_code+).
     #
+    # +setups+ lists every first-time QR made (auth.generate_secret and auth.reset_secret, the
+    # guard's and the relay's too), oldest first: "user", "secret", where it was asked for
+    # ("clientIp" and "userAgent" as your app sent them: a String, else nil), "requestedAt",
+    # "expiresAt", and "usedAt" once auth.validate_secret saw its user linked.
+    # auth.validate_secret answers like the API for the phone that scanned one: only a user's
+    # newest QR works (an older one answers 404), and its "setupContext" is made from what was
+    # sent as the API makes it: an IP address that is not a loopback one (a port, brackets and
+    # ::ffff: dropped), not shown ("ip" nil) when private, carrier-grade NAT, link-local or
+    # unique-local; a User-Agent without control characters, trimmed, at most 512 characters;
+    # neither of them: nil. GeoIP knows two documentation addresses (203.0.113.7 is Berlin,
+    # 198.51.100.23 New York), and "farFromPhone" is nil.
+    #
     # It answers the calls the step-up guard makes (approval requests, first-time linking,
-    # offline codes, silent sign-in checks) and defining action types, like the shared fake
-    # API the SDKs' own tests use. Any other call raises Touchque::APIError 404.
+    # offline codes, silent sign-in checks), what the phone asks after scanning a first-time
+    # QR (auth.validate_secret) and defining action types, like the shared fake API the
+    # SDKs' own tests use. Any other call raises Touchque::APIError 404.
     class FakeTouchque < Client
       # The code the phone shows for an offline QR (X-Touchque-Code).
       OFFLINE_CODE = "ABCD123"
@@ -63,6 +77,10 @@ module Touchque
       attr_reader :requests
       # Every API call so far: {"method", "path", "body"}, oldest first.
       attr_reader :calls
+      # Every first-time QR made so far, oldest first: {"user", "secret", "clientIp",
+      # "userAgent" (as sent: a String, else nil), "requestedAt", "expiresAt"}, and "usedAt" once
+      # auth.validate_secret saw its user linked. Only a user's newest one validates.
+      attr_reader :setups
 
       def initialize(linked: true, auto_approve: false, number_match: false)
         @lock = Monitor.new
@@ -74,6 +92,7 @@ module Touchque
         @totp_code = TOTP_CODE
         @requests = []
         @calls = []
+        @setups = []
         @linked = Set.new
         @unlinked = Set.new
         @pending = {}
@@ -250,12 +269,24 @@ module Touchque
         [200, { "consumed" => true, "requestId" => request["id"], "approvalProof" => nil }.merge(approval(request))]
       end
 
-      def new_secret(user)
+      # A new first-time QR for the user (generate or reset), added to +setups+ with where it
+      # was asked for: the body's clientIp and userAgent as sent. The user's older QRs stay
+      # listed; validate answers 404 for them.
+      def new_secret(user, body)
         @seq += 1
-        expires = Util.now_ms + secret_ttl_ms
+        now = Util.now_ms
+        expires = now + secret_ttl_ms
         @pending[user] = expires
-        { "secret" => "S#{@seq}", "qrCodeDataUrl" => "data:image/png;base64,QR#{@seq}-#{user}", "externalUsername" => user,
-          "expiresAt" => Steps.iso_of(expires), "ttlMs" => secret_ttl_ms, "recoveryCodes" => ["r#{@seq}"] }
+        secret = { "secret" => "S#{@seq}", "qrCodeDataUrl" => "data:image/png;base64,QR#{@seq}-#{user}", "externalUsername" => user,
+                   "expiresAt" => Steps.iso_of(expires), "ttlMs" => secret_ttl_ms, "recoveryCodes" => ["r#{@seq}"] }
+        @setups << { "user" => user, "secret" => secret["secret"], "clientIp" => as_sent(body["clientIp"]),
+                     "userAgent" => as_sent(body["userAgent"]), "requestedAt" => Steps.iso_of(now), "expiresAt" => secret["expiresAt"] }
+        secret
+      end
+
+      # A browser field as the app sent it: a String, else nil.
+      def as_sent(value)
+        value.is_a?(String) ? value : nil
       end
 
       def generate_secret(body)
@@ -263,7 +294,7 @@ module Touchque
         return [409, { "error" => "already linked" }] if linked?(user)
         return [409, { "error" => "Secret already generated" }] if @pending.key?(user)
 
-        [200, new_secret(user)]
+        [200, new_secret(user, body)]
       end
 
       # Like the API: a reset unlinks the phone (the guard only resets a user it found not linked).
@@ -271,7 +302,121 @@ module Touchque
         user = body["externalUsername"]
         @unlinked << user
         @linked.delete(user)
-        [200, { "success" => true }.merge(new_secret(user))]
+        [200, { "success" => true }.merge(new_secret(user, body))]
+      end
+
+      # The phone after scanning, like the API: 400 without a secret, 404 for one never made or
+      # replaced by a newer QR for its user, 409 once its user linked, 410 expired, else valid
+      # with the workspace's brand and where the QR was asked for.
+      def validate_secret(body)
+        return [400, { "error" => "secret is required" }] if body["secret"].to_s.empty?
+
+        setup = @setups.reverse_each.find { |s| s["secret"] == body["secret"] }
+        newest = setup && @setups.reverse_each.find { |s| s["user"] == setup["user"] }
+        if setup.nil? || !newest.equal?(setup)
+          return [404, { "valid" => false, "message" => "Secret not found - invalid code", "reason" => "not_found" }]
+        end
+
+        if linked?(setup["user"])
+          setup["usedAt"] ||= Steps.iso_of(Util.now_ms) # when the fake first saw it linked
+          return [409, { "valid" => false, "message" => "This secret has already been used", "reason" => "already_used", "usedAt" => setup["usedAt"] }]
+        end
+        if Util.now_ms > Steps.iso_ms(setup["expiresAt"])
+          return [410, { "valid" => false, "message" => "Secret has expired - generate a new code", "reason" => "expired", "expiredAt" => setup["expiresAt"] }]
+        end
+
+        [200, { "valid" => true, "externalUsername" => setup["user"], "integrationId" => "int-1",
+                "integration" => { "companyName" => "Fake workspace", "icon" => "key-outline", "color" => "#007AFF",
+                                   "logo" => nil, "logoDark" => nil, "logoVersion" => nil },
+                "setupContext" => setup_context_of(setup) }]
+      end
+
+      # The fake's GeoIP: two documentation addresses; any other place is unknown.
+      SETUP_PLACES = {
+        "203.0.113.7" => { "city" => "Berlin", "country" => "Germany", "countryCode" => "DE" },
+        "198.51.100.23" => { "city" => "New York", "country" => "United States", "countryCode" => "US" }
+      }.freeze
+      private_constant :SETUP_PLACES
+
+      # Addresses the phone does not show: private, carrier-grade NAT, link-local and unique-local.
+      NOT_SHOWN = %w[10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 fc00::/7 fe80::/10]
+                  .map { |range| IPAddr.new(range) }.freeze
+      private_constant :NOT_SHOWN
+
+      # Like JavaScript's trim(): Unicode white space at both ends, not NUL.
+      JS_TRIM = /\A[[:space:]]+|[[:space:]]+\z/
+      private_constant :JS_TRIM
+
+      # The clientIp the API keeps: an IP address (a port, brackets and ::ffff: dropped) that is
+      # not a loopback one, else nil.
+      def kept_ip(value)
+        return nil unless value.is_a?(String)
+
+        ip = value.gsub(JS_TRIM, "").sub(/\A(\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}\z/, '\1').sub(/\A\[([^\]]+)\](?::\d{1,5})?\z/, '\1')
+        ip = ip[7..] if ip.match?(/\A::ffff:/i) && ip_family(ip[7..]) == :ipv4
+        ip_family(ip) && ip != "::1" && !ip.start_with?("127.") ? ip : nil
+      end
+
+      # :ipv4 or :ipv6 for an IP address (Node's net.isIP), else nil.
+      def ip_family(text)
+        return nil if text.empty? || text.match?(%r{[/\[\]\s]})
+
+        IPAddr.new(text).ipv4? ? :ipv4 : :ipv6
+      rescue ArgumentError
+        nil
+      end
+
+      # The userAgent the API keeps: without control characters, trimmed, at most 512 characters; else nil.
+      def kept_user_agent(value)
+        text = value.is_a?(String) ? value.gsub(/[\u0000-\u001f\u007f]/, "").gsub(JS_TRIM, "") : ""
+        text.empty? ? nil : text[0, 512]
+      end
+
+      # What the phone shows of a kept address: nil for one it does not show.
+      def shown_ip(ip)
+        return nil if ip.nil?
+
+        addr = IPAddr.new(ip)
+        NOT_SHOWN.any? { |range| range.family == addr.family && range.include?(addr) } ? nil : ip
+      rescue ArgumentError
+        nil
+      end
+
+      # A tiny User-Agent parse with the API's names; nil for anything that is not a browser.
+      def setup_device(ua)
+        return nil unless ua&.start_with?("Mozilla/")
+
+        browser = if ua.match?(%r{EdgA?/|EdgiOS/}) then "Edge"
+                  elsif ua.match?(%r{Firefox/|FxiOS/}) then "Firefox"
+                  elsif ua.match?(%r{CriOS/|Chrome/}) then "Chrome"
+                  elsif ua.match?(%r{Version/[\d.]+.*Safari/}) then "Safari"
+                  end
+        os = if ua.include?("iPad") then "iPadOS"
+             elsif ua.match?(/iPhone|iPod/) then "iOS"
+             elsif ua.include?("Android") then "Android"
+             elsif ua.include?("Windows NT") then "Windows"
+             elsif ua.match?(/Mac OS X|Macintosh/) then "macOS"
+             elsif ua.include?("Linux") then "Linux"
+             end
+        return nil unless browser || os
+
+        model = if ua.include?("iPhone") then "iPhone"
+                elsif ua.include?("iPad") then "iPad"
+                end
+        { "browser" => browser, "os" => os, "model" => model }
+      end
+
+      # The "setupContext" of a QR, from what the app sent, kept as the API keeps it: nil when
+      # neither an address nor a User-Agent is kept.
+      def setup_context_of(setup)
+        client_ip = kept_ip(setup["clientIp"])
+        user_agent = kept_user_agent(setup["userAgent"])
+        return nil if client_ip.nil? && user_agent.nil?
+
+        ip = shown_ip(client_ip)
+        place = ip && SETUP_PLACES[ip]
+        { "ip" => ip, "location" => place&.dup, "device" => setup_device(user_agent),
+          "requestedAt" => setup["requestedAt"], "farFromPhone" => nil }
       end
 
       def get_user(_body, user)
@@ -349,6 +494,7 @@ module Touchque
         ["POST", %r{\A/login/([^/]+)/consume\z}, :login_consume],
         ["POST", %r{\A/auth/generate-secret\z}, :generate_secret],
         ["POST", %r{\A/auth/secret/reset\z}, :reset_secret],
+        ["POST", %r{\A/auth/secret/validate\z}, :validate_secret],
         ["GET", %r{\A/users/([^/]+)\z}, :get_user],
         ["POST", %r{\A/offline/challenge\z}, :offline_challenge],
         ["POST", %r{\A/offline/verify\z}, :offline_verify],

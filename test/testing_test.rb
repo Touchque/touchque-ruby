@@ -88,6 +88,80 @@ class TestingTest < Minitest::Test
     assert_equal({ "state" => "enroll", "reason" => "enrollment_off" }, step(off))
   end
 
+  SAFARI_IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) " \
+                  "Version/18.1 Mobile/15E148 Safari/604.1"
+
+  def test_first_time_qrs_keep_where_they_were_asked_for
+    tq = FakeTouchque.new.unlink("qr@acme.com")
+    first = run_guard(tq, "qr@acme.com", ip: "203.0.113.7", user_agent: SAFARI_IPHONE)
+    assert_equal "data:image/png;base64,QR1-qr@acme.com", step(first)["enroll"]["qrCodeDataUrl"], "the answer is unchanged"
+    generate = tq.calls.find { |c| c["path"] == "/auth/generate-secret" }["body"]
+    assert_equal({ "externalUsername" => "qr@acme.com", "clientIp" => "203.0.113.7", "userAgent" => SAFARI_IPHONE }, generate)
+    setup = tq.setups.last
+    assert_equal ["qr@acme.com", "S1", "203.0.113.7", SAFARI_IPHONE, step(first)["enroll"]["expiresAt"]],
+                 setup.values_at("user", "secret", "clientIp", "userAgent", "expiresAt")
+
+    res = tq.auth.validate_secret("S1")
+    assert_equal [true, "qr@acme.com", "int-1", "Fake workspace"],
+                 [res["valid"], res["externalUsername"], res["integrationId"], res["integration"]["companyName"]]
+    ctx = res["setupContext"]
+    assert_instance_of Touchque::SetupContext, ctx
+    assert_equal({ "ip" => "203.0.113.7", "location" => { "city" => "Berlin", "country" => "Germany", "countryCode" => "DE" },
+                   "device" => { "browser" => "Safari", "os" => "iOS", "model" => "iPhone" },
+                   "requestedAt" => setup["requestedAt"], "farFromPhone" => nil }, ctx)
+    assert_match(/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\z/, ctx.requested_at)
+
+    # A reset adds a QR that replaces it: the old secret is unknown (still listed), the new one
+    # keeps its own browser as sent.
+    tq.auth.reset_secret("qr@acme.com", client_ip: " 10.0.0.8:443 ", user_agent: "curl/8.4.0")
+    assert_equal [["S1", "203.0.113.7", SAFARI_IPHONE], ["S2", " 10.0.0.8:443 ", "curl/8.4.0"]],
+                 tq.setups.map { |s| s.values_at("secret", "clientIp", "userAgent") }
+    gone = assert_raises(Touchque::APIError) { tq.auth.validate_secret("S1") }
+    assert_equal [404, "not_found"], [gone.status, gone.reason]
+    # A private address (trimmed, the port dropped) and something that is not a browser: nothing
+    # the phone could show, though both were kept.
+    ctx = tq.auth.validate_secret("S2")["setupContext"]
+    assert_equal [nil, nil, nil, nil], [ctx.ip, ctx.location, ctx.device, ctx.far_from_phone]
+
+    # No browser named: no setup context.
+    tq.auth.reset_secret("qr@acme.com")
+    assert_equal ["S3", nil, nil], tq.setups.last.values_at("secret", "clientIp", "userAgent")
+    assert_nil tq.auth.validate_secret("S3")["setupContext"]
+    gone = assert_raises(Touchque::APIError) { tq.auth.validate_secret("S2") }
+    assert_equal [404, "not_found"], [gone.status, gone.reason]
+
+    # The phone linked: used (a replaced QR stays unknown). Expired. No secret.
+    tq.link("qr@acme.com")
+    used = assert_raises(Touchque::APIError) { tq.auth.validate_secret("S3") }
+    assert_equal [409, "already_used", tq.setups.last["usedAt"]], [used.status, used.reason, used.data["usedAt"]]
+    assert_match(/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\z/, used.data["usedAt"])
+    assert_equal 404, assert_raises(Touchque::APIError) { tq.auth.validate_secret("S1") }.status
+    tq.secret_ttl_ms = -1000
+    late = tq.auth.reset_secret("late@acme.com", client_ip: "198.51.100.23")
+    expired = assert_raises(Touchque::APIError) { tq.auth.validate_secret(late["secret"]) }
+    assert_equal [410, "expired", late["expiresAt"]], [expired.status, expired.reason, expired.data["expiredAt"]]
+    assert_equal 400, assert_raises(Touchque::APIError) { tq.auth.validate_secret("") }.status
+
+    # Every QR, oldest first; "usedAt" only on the one validate saw linked.
+    assert_equal [%w[S1 qr@acme.com], %w[S2 qr@acme.com], %w[S3 qr@acme.com], %w[S4 late@acme.com]],
+                 tq.setups.map { |s| s.values_at("secret", "user") }
+    keys = %w[user secret clientIp userAgent requestedAt expiresAt]
+    assert_equal [keys, keys, keys + ["usedAt"], keys], tq.setups.map(&:keys)
+  end
+
+  def test_the_guards_renewed_qr_is_listed_with_its_own_browser
+    tq = FakeTouchque.new(linked: false)
+    tq.secret_ttl_ms = 10_000 # inside the 15 s margin: the next poll renews the QR (a reset)
+    first = run_guard(tq, "renew@acme.com", ip: "203.0.113.7", user_agent: SAFARI_IPHONE)
+    renewed = run_guard(tq, "renew@acme.com", token: token(first), ip: "198.51.100.23", user_agent: "curl/8.4.0")
+    assert_equal "data:image/png;base64,QR2-renew@acme.com", step(renewed)["enroll"]["qrCodeDataUrl"]
+    assert_equal [["S1", "203.0.113.7", SAFARI_IPHONE], ["S2", "198.51.100.23", "curl/8.4.0"]],
+                 tq.setups.map { |s| s.values_at("secret", "clientIp", "userAgent") }
+    assert_equal 404, assert_raises(Touchque::APIError) { tq.auth.validate_secret("S1") }.status
+    ctx = tq.auth.validate_secret("S2")["setupContext"]
+    assert_equal ["198.51.100.23", "New York", nil], [ctx.ip, ctx.location.city, ctx.device]
+  end
+
   def test_offline_and_time_based_codes
     tq = FakeTouchque.new
     first = run_guard(tq, "off@acme.com")

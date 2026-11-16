@@ -429,6 +429,72 @@ class RailsTest < FakeApiTest
     assert_equal [429, "RATE_LIMITED"], [status, again["error"]]
   end
 
+  # Where the first-time QR was asked for: it names the browser the push names, from the same
+  # address (Rack::Request#ip in the relay, request.remote_ip in Rails), trusted proxies and all.
+  # [REMOTE_ADDR, X-Forwarded-For, the address Rack::Request#ip gives, the one request.remote_ip gives]
+  PROXIES = [
+    # Straight from the browser.
+    ["203.0.113.7", nil, "203.0.113.7", "203.0.113.7"],
+    # Behind a trusted proxy (a private address).
+    ["10.0.0.2", "198.51.100.23", "198.51.100.23", "198.51.100.23"],
+    # Rack reads X-Forwarded-For only from a trusted proxy; Rails takes its rightmost untrusted entry.
+    ["203.0.113.7", "198.51.100.99", "203.0.113.7", "198.51.100.99"],
+    # Never the leftmost entry: the address the trusted proxy saw.
+    ["10.0.0.2", "192.0.2.66, 198.51.100.23", "198.51.100.23", "198.51.100.23"]
+  ].freeze
+  BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0"
+
+  def bodies(path) = api.calls.select { |c| c["path"] == path }.map { |c| c["body"] }
+
+  def test_relay_enroll_start_and_login_name_the_browser_the_push_names
+    PROXIES.each_with_index do |(remote, forwarded, expected, _), i|
+      user = "relay-proxy#{i}@acme.com"
+      relay = Touchque::Rack::Relay.new(client: tq, get_user_id: ->(_) { user }, get_login_user: ->(_) { user }, rate_limit: false)
+      request = lambda do |path|
+        env = Rack::MockRequest.env_for(path, method: "POST", input: "{}", "CONTENT_TYPE" => "application/json",
+                                              "REMOTE_ADDR" => remote, "HTTP_USER_AGENT" => BROWSER_UA)
+        env["HTTP_X_FORWARDED_FOR"] = forwarded if forwarded
+        relay.call(env)[0]
+      end
+      assert_equal 200, request.call("/enroll/start")
+      assert_equal({ "externalUsername" => user, "clientIp" => expected, "userAgent" => BROWSER_UA }, bodies("/auth/generate-secret").last, remote)
+      # POST /login with that QR up: the push (refused, no phone yet) and the new QR (reset) in one request.
+      assert_equal 202, request.call("/login")
+      login = bodies("/login/request").last
+      assert_equal [user, expected, BROWSER_UA], login.values_at("externalUsername", "clientIp", "userAgent"), remote
+      assert_equal login.slice("clientIp", "userAgent"), bodies("/auth/secret/reset").last.slice("clientIp", "userAgent"), remote
+    end
+
+    # No address at all: neither request names one.
+    nobody = ->(_) { "relay-none@acme.com" }
+    relay = Touchque::Rack::Relay.new(client: tq, get_user_id: nobody, get_login_user: nobody, rate_limit: false)
+    %w[/enroll/start /login].each do |path|
+      env = Rack::MockRequest.env_for(path, method: "POST", input: "{}", "CONTENT_TYPE" => "application/json")
+      env.delete("REMOTE_ADDR")
+      relay.call(env)
+    end
+    assert_equal [{ "externalUsername" => "relay-none@acme.com" }], bodies("/auth/generate-secret").last(1)
+    assert_equal({ "externalUsername" => "relay-none@acme.com" }, bodies("/auth/secret/reset").last)
+    refute bodies("/login/request").last.key?("clientIp")
+  end
+
+  def test_require_touchque_names_the_browser_the_push_names_with_the_first_time_qr
+    PROXIES.each_with_index do |(remote, forwarded, _, expected), i|
+      header "X-User", "rails-proxy#{i}@acme.com"
+      header "User-Agent", BROWSER_UA
+      header "X-Forwarded-For", forwarded # nil: none
+      post "/transfer", { amount: "1" }, { "REMOTE_ADDR" => remote }
+      assert_equal [202, "enroll"], [last_response.status, json["touchque"]["state"]], remote
+      login = bodies("/login/request").last
+      assert_equal [expected, BROWSER_UA], login.values_at("clientIp", "userAgent"), remote
+      assert_equal({ "externalUsername" => "rails-proxy#{i}@acme.com", "clientIp" => expected, "userAgent" => BROWSER_UA },
+                   bodies("/auth/generate-secret").last, remote)
+    end
+    # What the phone shows for the last of them.
+    ctx = tq.auth.validate_secret("S")["setupContext"]
+    assert_equal ["198.51.100.23", "New York", "Firefox", "Windows"], [ctx.ip, ctx.location.city, ctx.device.browser, ctx.device.os]
+  end
+
   def test_relay_guard_answers_carry_the_state_headers
     api.link("refused@acme.com")
     api.opts(blocked: "geo_policy")

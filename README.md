@@ -214,6 +214,35 @@ In Sinatra or plain Rack, `status, headers, body = Touchque::Guard.response(resu
   return a result to answer instead, or nil or false to go on (anything else answers 503). The relay does
   this for `POST /login`.
 
+## Where a first-time QR was asked for
+
+Before it links, the Touchque app shows where the linking QR was asked for (the city, the browser and
+device, the time), so someone tricked into scanning another person's QR sees that person's place and
+device. Touchque records it from the request that made the QR, `generate_secret` or `reset_secret` (a new
+QR in place of the last one), and keeps it on its servers, never in the QR; with neither an IP nor a
+User-Agent the QR has none (a reset does not carry the last one's over). `require_touchque` and the relay
+send the browser's IP and User-Agent with the QR and its renewal as with the push, and
+`Touchque::Guard.run` and `tq.start` send the `ip:` and `user_agent:` you give them; when you make the QR
+yourself, pass them as you do for `login.request`. They go as given: Touchque keeps an IP address without
+its port (a loopback address, or anything that is not an IP address, is dropped) and the User-Agent
+without control characters, at most 512 characters, and never refuses the QR over them.
+
+`validate_secret` is the phone's call: the Touchque app makes it after scanning, and the answer carries
+`"setupContext"`, a `Touchque::SetupContext` (a Hash with a reader per field, any of them `nil`), or `nil`
+when none was recorded (a QR asked for without a browser, or an older QR). Its `"farFromPhone"` compares
+the QR's place with the address of whoever calls `validate_secret`: called from your server (a test, a
+support tool), it compares with your server, not with the phone.
+
+```ruby
+qr = tq.auth.generate_secret(user, client_ip: request.remote_ip, user_agent: request.user_agent)
+# Show qr["qrCodeDataUrl"]; tq.auth.reset_secret takes the same client_ip: and user_agent: for a new QR.
+
+# What the phone is shown when it scans that QR, here asked from your server:
+ctx = tq.auth.validate_secret(qr["secret"])["setupContext"] # nil: none recorded
+ctx&.location&.city # "Berlin"; also ctx.ip, ctx.device&.browser, ctx.requested_at
+ctx&.far_from_phone # measured from your server's address here, not the phone's
+```
+
 ## The three primitives (any framework)
 
 ```ruby
@@ -566,6 +595,14 @@ end
 - Every user has a phone linked. `tq.unlink(user)` shows them the first-time QR instead
   (`FakeTouchque.new(linked: false)`: nobody has one); `tq.link(user)` is the phone scanning it.
   `tq.secret_ttl_ms` is how long a QR works (5 minutes).
+- `tq.setups`: every first-time QR made (`generate_secret` and `reset_secret`, the guard's and the
+  relay's too), oldest first, each with `"user"`, `"secret"`, `"clientIp"` and `"userAgent"` as your app
+  sent them (`nil` when it sent none or not a String), `"requestedAt"`, `"expiresAt"`, and `"usedAt"` once
+  `validate_secret` saw its user linked. `tq.auth.validate_secret(secret)` answers like the API for the
+  phone that scanned it: only the user's newest QR works (an older one answers 404), with the
+  `"setupContext"` the phone is shown, made from what your app sent as the API makes it: 203.0.113.7 is
+  Berlin and 198.51.100.23 New York, a loopback address (a test request's `127.0.0.1`) is not kept, a
+  private one is not shown, and `"farFromPhone"` is `nil`.
 - `FakeTouchque.new(number_match: true)`: pushes ask for the number `47`.
 - `tq.requests` (`"id"`, `"user"`, `"type"`, `"details"`, `"referenceId"`, `"status"`, `"expiresAt"`,
   answered on each status check) and `tq.calls` (`"method"`, `"path"`, `"body"`): what your app asked

@@ -51,8 +51,15 @@
 //
 // Help desk: /assist* keeps sessions in memory; the person's phone answers a
 // check on POST /__test/assist {requestId?, action: approve|wrong_number|not_me|coached|decline}.
+//
+// 2FA setup context: POST /auth/generate-secret and /auth/secret/reset keep the browser
+// the partner named (clientIp, userAgent) with the new secret; POST /auth/secret/validate
+// {secret} (public, as on the API) answers it as `setupContext` (GeoIP: a fixed table of two
+// documentation addresses; farFromPhone null). /__test/opts { setupContextNull: true }
+// answers setupContext: null.
 import http from 'node:http';
 import crypto from 'node:crypto';
+import net from 'node:net';
 
 const API_KEY = 'tq_test_key';
 const API_SECRET = 'test_secret';
@@ -71,6 +78,8 @@ function reset() {
     orgAgents: new Map(), orgAgentTokens: new Map(), cibaRequests: new Map(), sharedAsks: new Map(), vaultConnections: new Map(), vaultTokens: new Map(),
     qrPairings: new Map(),
     assists: new Map(),
+    // First-time linking secrets and where they were asked for: { user, secret, clientIp, userAgent, requestedAt, expiresAt, usedAt? }.
+    setups: [],
   };
 }
 reset();
@@ -807,18 +816,89 @@ const secretExpiry = () => {
   const ttlMs = Number.isFinite(state.opts.secretTtlMs) ? state.opts.secretTtlMs : 300000;
   return { expiresAt: new Date(Date.now() + ttlMs).toISOString(), ttlMs };
 };
+// 2FA setup context: where a first-time linking QR was asked for, kept with the secret (never in the
+// QR) and shown by the phone before it links. As the API keeps it: clientIp
+// only when it is an IP address and not a loopback one (a port, brackets and ::ffff: dropped),
+// userAgent without control characters, at most 512 characters; neither named → setupContext null.
+const keptIp = (v) => {
+  if (typeof v !== 'string') return null;
+  let ip = v.trim().replace(/^(\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}$/, '$1').replace(/^\[([^\]]+)\](?::\d{1,5})?$/, '$1');
+  if (/^::ffff:/i.test(ip) && net.isIPv4(ip.slice(7))) ip = ip.slice(7);
+  return net.isIP(ip) && ip !== '::1' && !/^127\./.test(ip) ? ip : null;
+};
+const keptUserAgent = (v) => {
+  // eslint-disable-next-line no-control-regex
+  const text = typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').trim() : '';
+  return text ? text.slice(0, 512) : null;
+};
+const rememberSetup = (user, secret, b, expiry) => {
+  state.setups = state.setups.filter((s) => s.user !== user);
+  state.setups.push({ user, secret, clientIp: keptIp(b.clientIp), userAgent: keptUserAgent(b.userAgent), requestedAt: new Date().toISOString(), expiresAt: expiry.expiresAt });
+};
+// The phone shows no private, carrier-grade NAT, unique-local or link-local address (as on the
+// API); documentation ranges are shown, tests use them.
+const NON_PUBLIC = new net.BlockList();
+[['10.0.0.0', 8, 'ipv4'], ['172.16.0.0', 12, 'ipv4'], ['192.168.0.0', 16, 'ipv4'], ['100.64.0.0', 10, 'ipv4'], ['169.254.0.0', 16, 'ipv4'], ['fc00::', 7, 'ipv6'], ['fe80::', 10, 'ipv6']]
+  .forEach(([a, p, t]) => NON_PUBLIC.addSubnet(a, p, t));
+const shownIp = (ip) => (ip && !NON_PUBLIC.check(ip, net.isIPv6(ip) ? 'ipv6' : 'ipv4') ? ip : null);
+// The fake's GeoIP: two documentation addresses; any other place is unknown (location null).
+const SETUP_PLACES = new Map([
+  ['203.0.113.7', { city: 'Berlin', country: 'Germany', countryCode: 'DE' }],
+  ['198.51.100.23', { city: 'New York', country: 'United States', countryCode: 'US' }],
+]);
+// A tiny User-Agent parse with the API's names: Edge, Firefox, Chrome, Safari;
+// iPadOS, iOS, Android, Windows, macOS, Linux; model only for an iPhone or an iPad. Not a browser
+// (curl, an SDK's HTTP client) or nothing known in it → null.
+const setupDevice = (ua) => {
+  if (!ua || !/^Mozilla\//.test(ua)) return null;
+  const browser = /EdgA?\/|EdgiOS\//.test(ua) ? 'Edge' : /Firefox\/|FxiOS\//.test(ua) ? 'Firefox'
+    : /CriOS\/|Chrome\//.test(ua) ? 'Chrome' : /Version\/[\d.]+.*Safari\//.test(ua) ? 'Safari' : null;
+  const os = /iPad/.test(ua) ? 'iPadOS' : /iPhone|iPod/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android'
+    : /Windows NT/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : null;
+  if (!browser && !os) return null;
+  return { browser, os, model: /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : null };
+};
+const setupContextOf = (s) => {
+  if (!s.clientIp && !s.userAgent) return null;
+  const ip = shownIp(s.clientIp);
+  const place = ip && SETUP_PLACES.get(ip);
+  return { ip, location: place ? { ...place } : null, device: setupDevice(s.userAgent), requestedAt: s.requestedAt, farFromPhone: null };
+};
 route('POST', '/auth/generate-secret', (req, res, b) => {
   const u = b.externalUsername;
   if (state.linked.has(u)) return send(res, 409, { error: 'already linked' });
   if (state.pending.has(u)) return send(res, 409, { error: 'Secret already generated' });
   state.pending.add(u);
-  send(res, 200, { secret: 'S', qrCodeDataUrl: `data:image/png;base64,QR-${u}`, externalUsername: u, ...secretExpiry(), recoveryCodes: ['r1'] });
+  const expiry = secretExpiry();
+  rememberSetup(u, 'S', b, expiry);
+  send(res, 200, { secret: 'S', qrCodeDataUrl: `data:image/png;base64,QR-${u}`, externalUsername: u, ...expiry, recoveryCodes: ['r1'] });
 });
 route('POST', '/auth/secret/reset', (req, res, b) => {
   const u = b.externalUsername;
   state.linked.delete(u);
   state.pending.add(u);
-  send(res, 200, { success: true, secret: 'S2', qrCodeDataUrl: `data:image/png;base64,QR2-${u}`, externalUsername: u, ...secretExpiry(), recoveryCodes: ['r2'] });
+  const expiry = secretExpiry();
+  rememberSetup(u, 'S2', b, expiry);
+  send(res, 200, { success: true, secret: 'S2', qrCodeDataUrl: `data:image/png;base64,QR2-${u}`, externalUsername: u, ...expiry, recoveryCodes: ['r2'] });
+});
+// The phone after scanning (public: no API key, as on the API). Like the API: 400 without a secret,
+// 404 one never generated (or replaced by a reset), 409 its user linked since, 410 expired, else
+// valid with the brand and setupContext. Every first-time QR is 'S' and every reset 'S2': the
+// newest secret with that value answers.
+route('POST', '/auth/secret/validate', (req, res, b) => {
+  if (!b.secret) return send(res, 400, { error: 'secret is required' });
+  const s = state.setups.findLast((x) => x.secret === b.secret);
+  if (!s) return send(res, 404, { valid: false, message: 'Secret not found - invalid code', reason: 'not_found' });
+  if (state.linked.has(s.user)) {
+    s.usedAt ??= new Date().toISOString(); // when the fake first saw it linked
+    return send(res, 409, { valid: false, message: 'This secret has already been used', reason: 'already_used', usedAt: s.usedAt });
+  }
+  if (Date.now() > Date.parse(s.expiresAt)) return send(res, 410, { valid: false, message: 'Secret has expired - generate a new code', reason: 'expired', expiredAt: s.expiresAt });
+  send(res, 200, {
+    valid: true, externalUsername: s.user, integrationId: 'int-1',
+    integration: { companyName: 'Fake workspace', icon: 'key-outline', color: '#007AFF', logo: null, logoDark: null, logoVersion: null },
+    setupContext: state.opts.setupContextNull ? null : setupContextOf(s),
+  });
 });
 // A healthy phone posture, like the real API's `device` on a user with a linked phone.
 const DEVICE_POSTURE = {
@@ -1635,7 +1715,8 @@ const server = http.createServer((req, res) => {
       if (path === '/agents/token') return req.method === 'POST' ? agentToken(req, res, body) : send(res, 404, { error: 'no route' });
       const scope = AGENT_SCOPES[`${req.method} ${path}`] || (req.method === 'GET' && path.startsWith('/agents/approvals/') ? 'approvals:read' : undefined);
       if (!agentAuth(req, res, path, scope)) return undefined;
-    } else if (path === '/agents/jwks.json') {
+    } else if (path === '/agents/jwks.json' || path === '/auth/secret/validate') {
+      // Public on the API too (no API key, no feature gate): recorded, not checked.
       state.calls.push({ method: req.method, path, url: req.url, body });
     } else if (!path.startsWith('/__test/') && !ssoPath) {
       const bad = verifySignature(req, raw);

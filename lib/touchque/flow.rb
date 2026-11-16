@@ -13,6 +13,7 @@ module Touchque
 
     # Starts an approval for +action+; never waits. A user with no phone linked gets the
     # linking QR ("enroll"); with enroll: false, {"state" => "enroll", "reason" => "enrollment_off"}.
+    # +ip+ and +user_agent+ (the browser's) go with the push and with a linking QR.
     def start(client, action, user, details: nil, reference_id: nil, ip: nil, user_agent: nil, enroll: true, browser_proof: nil, context: nil)
       raise ConfigError, "start() needs the user id" if user.to_s.empty?
 
@@ -39,7 +40,7 @@ module Touchque
         why = e.case_code ? { "caseCode" => e.case_code } : {}
         if e.status == 404 && (code == "device_not_linked" || e.message.downcase.include?("linked device"))
           # No phone, and this guard may not show the linking QR: final, a page stops polling.
-          return enroll ? enroll_step(client, user) : { "state" => "enroll", "reason" => "enrollment_off" }
+          return enroll ? enroll_step(client, user, ip: ip, user_agent: user_agent) : { "state" => "enroll", "reason" => "enrollment_off" }
         end
         return { "state" => "frozen", "retryAfter" => e.retry_after }.merge(why) if e.status == 423
         return { "state" => "rate_limited", "retryAfter" => e.retry_after }.merge(why) if e.status == 429
@@ -57,9 +58,12 @@ module Touchque
     end
 
     # First-time linking. Never unlinks a phone: a secret is only re-issued when the
-    # account is confirmed NOT linked.
-    def enroll_step(client, user)
-      enroll_qr(client.auth.generate_secret(user))
+    # account is confirmed NOT linked. +ip+ and +user_agent+: the browser asking for the QR,
+    # as the login request sends them (the phone shows where the QR was asked for).
+    def enroll_step(client, user, ip: nil, user_agent: nil)
+      # Only what there is, so an auth stub taking the user alone still works without them.
+      browser = { client_ip: ip, user_agent: user_agent }.compact
+      enroll_qr(client.auth.generate_secret(user, **browser))
     rescue APIError => e
       raise unless e.status == 409
 
@@ -70,7 +74,7 @@ module Touchque
       end
       return { "state" => "enroll", "reason" => "already_linked" } if current && (current["used"] || current["deviceId"])
 
-      enroll_qr(client.auth.reset_secret(user))
+      enroll_qr(client.auth.reset_secret(user, **browser))
     end
 
     # The enroll step for a new linking QR. "expiresAt" is when the QR stops working: the
@@ -409,6 +413,8 @@ module Touchque
     # misconfigured, 401 unauthenticated without a user, logged once).
     # +enroll+: false for a guard that may not show the linking QR: a user with no phone gets
     # 202 {"state" => "enroll", "reason" => "enrollment_off"}.
+    # +ip+, +user_agent+: the browser's, for the push and for a linking QR or its renewal (the
+    # phone shows where the QR was asked for).
     # Silent sign-ins: with +silent_sign_in+ on, a new attempt that carries a browser
     # proof first asks Touchque (risk.check); only an answer of exactly prompt: false
     # approves at once with no push. Otherwise, and on any error, the usual push starts.

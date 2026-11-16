@@ -10,16 +10,30 @@ module Touchque
 
       # A new setup secret: show +qrCodeDataUrl+ so the Touchque app links the phone.
       # 409 when an unscanned or used secret exists (reset_secret issues a new one).
-      def generate_secret(external_username)
-        @http.post("/auth/generate-secret", { "externalUsername" => external_username })
+      # client_ip:, user_agent: the browser asking for the QR, from its request as for
+      # login.request (and sent the same way). Touchque keeps where a QR was asked for on its
+      # servers, never in the QR, and the phone shows it before it links (validate_secret's
+      # "setupContext"); with neither, the QR has none.
+      def generate_secret(external_username, client_ip: nil, user_agent: nil)
+        @http.post("/auth/generate-secret", secret_body(external_username, client_ip, user_agent))
       end
 
-      def reset_secret(external_username)
-        @http.post("/auth/secret/reset", { "externalUsername" => external_username })
+      # A new setup secret in place of the user's current one. Takes client_ip: and
+      # user_agent: as generate_secret does, and Touchque records where the new QR was asked for
+      # the same way: with neither, it has none (the last QR's is not carried over).
+      def reset_secret(external_username, client_ip: nil, user_agent: nil)
+        @http.post("/auth/secret/reset", secret_body(external_username, client_ip, user_agent))
       end
 
+      # The phone's call: what the Touchque app asks after scanning a first-time QR. "valid",
+      # "externalUsername", the workspace's brand ("integration") and "setupContext", where the
+      # QR was asked for: a Touchque::SetupContext, or nil when none was recorded (a QR asked for
+      # without a browser, an older QR or Touchque). Its "farFromPhone" is measured from whoever
+      # calls this: called from your server, from your server's address, not the phone's.
+      # APIError 404 for an unknown or replaced secret, 409 when it was used, 410 when it expired.
       def validate_secret(secret)
-        @http.post("/auth/secret/validate", { "secret" => secret })
+        res = @http.post("/auth/secret/validate", { "secret" => secret })
+        res.is_a?(Hash) ? res.merge("setupContext" => SetupContext.parse(res["setupContext"])) : res
       end
 
       # A user's link status without sending a push: +used+ flips true and +deviceId+ is
@@ -27,6 +41,16 @@ module Touchque
       # posture (device trust), nil before a phone is linked. APIError 404 for an unknown user.
       def get_user(external_username)
         @http.get("/users/#{Util.seg(external_username)}")
+      end
+
+      private
+
+      # The browser fields go out as Login#request sends them: each unless nil, as given.
+      def secret_body(external_username, client_ip, user_agent)
+        body = { "externalUsername" => external_username }
+        body["clientIp"] = client_ip unless client_ip.nil?
+        body["userAgent"] = user_agent unless user_agent.nil?
+        body
       end
     end
 

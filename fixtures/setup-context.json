@@ -1,0 +1,103 @@
+{
+  "full": {
+    "valid": true,
+    "externalUsername": "user@example.com",
+    "integrationId": "int-1",
+    "integration": { "companyName": "Fake workspace", "icon": "key-outline", "color": "#007AFF", "logo": null, "logoDark": null, "logoVersion": null },
+    "setupContext": {
+      "ip": "203.0.113.7",
+      "location": { "city": "Berlin", "country": "Germany", "countryCode": "DE" },
+      "device": { "browser": "Safari", "os": "iOS", "model": "iPhone" },
+      "requestedAt": "2026-11-16T09:30:00.000Z",
+      "farFromPhone": true
+    }
+  },
+  "allNull": {
+    "valid": true,
+    "externalUsername": "user@example.com",
+    "integrationId": "int-1",
+    "integration": { "companyName": "Fake workspace", "icon": "key-outline", "color": "#007AFF", "logo": null, "logoDark": null, "logoVersion": null },
+    "setupContext": {
+      "ip": null,
+      "location": null,
+      "device": null,
+      "requestedAt": "2026-11-16T09:29:00.000Z",
+      "farFromPhone": null
+    }
+  },
+  "missing": {
+    "valid": true,
+    "externalUsername": "user@example.com",
+    "integrationId": "int-1",
+    "integration": { "companyName": "Fake workspace", "icon": "key-outline", "color": "#007AFF", "logo": null, "logoDark": null, "logoVersion": null }
+  },
+  "null": {
+    "valid": true,
+    "externalUsername": "user@example.com",
+    "integrationId": "int-1",
+    "integration": { "companyName": "Fake workspace", "icon": "key-outline", "color": "#007AFF", "logo": null, "logoDark": null, "logoVersion": null },
+    "setupContext": null
+  },
+  "wrongTypes": {
+    "valid": true,
+    "externalUsername": "user@example.com",
+    "integrationId": "int-1",
+    "integration": { "companyName": "Fake workspace", "icon": "key-outline", "color": "#007AFF", "logo": null, "logoDark": null, "logoVersion": null },
+    "setupContext": {
+      "ip": 203,
+      "location": "Berlin, Germany",
+      "device": { "browser": ["Chrome"], "os": { "name": "macOS" }, "model": false },
+      "requestedAt": "2026-11-16T09:32:00.000Z",
+      "farFromPhone": "true"
+    }
+  },
+  "extraFields": {
+    "valid": true,
+    "externalUsername": "user@example.com",
+    "integrationId": "int-1",
+    "integration": { "companyName": "Fake workspace", "icon": "key-outline", "color": "#007AFF", "logo": null, "logoDark": null, "logoVersion": null },
+    "nextStep": "link",
+    "setupContext": {
+      "ip": "198.51.100.23",
+      "location": { "city": null, "country": "United States", "countryCode": "US", "region": "New York", "latitude": 40.71 },
+      "device": { "browser": "Firefox", "os": "Windows", "model": null, "deviceType": "desktop", "browserVersion": "133.0" },
+      "requestedAt": "2026-11-16T09:31:05.250Z",
+      "farFromPhone": false,
+      "asn": 7922,
+      "network": { "sameAsPhone": false },
+      "warnings": ["new_country"]
+    }
+  },
+  "expected": {
+    "full": {
+      "ip": "203.0.113.7",
+      "location": { "city": "Berlin", "country": "Germany", "countryCode": "DE" },
+      "device": { "browser": "Safari", "os": "iOS", "model": "iPhone" },
+      "requestedAt": "2026-11-16T09:30:00.000Z",
+      "farFromPhone": true
+    },
+    "allNull": {
+      "ip": null,
+      "location": null,
+      "device": null,
+      "requestedAt": "2026-11-16T09:29:00.000Z",
+      "farFromPhone": null
+    },
+    "missing": null,
+    "null": null,
+    "wrongTypes": {
+      "ip": null,
+      "location": null,
+      "device": { "browser": null, "os": null, "model": null },
+      "requestedAt": "2026-11-16T09:32:00.000Z",
+      "farFromPhone": null
+    },
+    "extraFields": {
+      "ip": "198.51.100.23",
+      "location": { "city": null, "country": "United States", "countryCode": "US" },
+      "device": { "browser": "Firefox", "os": "Windows", "model": null },
+      "requestedAt": "2026-11-16T09:31:05.250Z",
+      "farFromPhone": false
+    }
+  }
+}

@@ -91,7 +91,7 @@ module Touchque
   # offline codes and passkeys, so you don't hand-write them (Touchque::Rack::Relay
   # mounts it in Rails, Sinatra or any Rack app):
   #
-  #   POST   /enroll/start                  (signed in)  generate_secret answer
+  #   POST   /enroll/start                  (signed in)  generate_secret answer (with the browser's IP and User-Agent)
   #   GET    /enroll/status                 (signed in)  {linked, used, deviceId}
   #   POST   /login                         (pre-auth)   202 {touchque: step, token} until approved
   #   POST   /offline/challenge|verify|totp (pre-auth)   offline codes
@@ -180,8 +180,10 @@ module Touchque
       user_id = user_id(ctx)
       return unauthorized unless user_id
 
+      # The browser asking for the QR, as POST /login sends it: the phone shows where the QR was asked for.
+      browser = { client_ip: ctx[:ip].empty? ? nil : ctx[:ip], user_agent: ctx[:user_agent] }.compact
       begin
-        RelayResponse.new(200, @tq.auth.generate_secret(user_id))
+        RelayResponse.new(200, @tq.auth.generate_secret(user_id, **browser))
       rescue APIError => e
         return relay_error(e) unless e.status == 409
 
@@ -193,7 +195,7 @@ module Touchque
             return RelayResponse.new(409, { "error" => "already_linked", "message" => "A phone is already linked to this account." })
           end
 
-          RelayResponse.new(200, @tq.auth.reset_secret(user_id))
+          RelayResponse.new(200, @tq.auth.reset_secret(user_id, **browser))
         rescue StandardError => retry_error
           relay_error(retry_error)
         end

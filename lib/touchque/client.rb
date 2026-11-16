@@ -55,7 +55,9 @@ module Touchque
     # Starts an approval and returns at once: show the step in your UI. "waiting" with
     # "number": show the number, the user picks it on the phone. "enroll": show
     # step["enroll"]["qrCodeDataUrl"] so the user links the Touchque app first.
-    # +browser_proof+ (silent sign-ins): the X-Touchque-Browser header, passed through.
+    # +ip+, +user_agent+: the browser's, for the push and for a linking QR (the phone shows
+    # where the QR was asked for). +browser_proof+ (silent sign-ins): the X-Touchque-Browser
+    # header, passed through.
     def start(action, user, details: nil, reference_id: nil, ip: nil, user_agent: nil, browser_proof: nil, context: nil)
       Steps.start(self, action, user, details: details, reference_id: reference_id, ip: ip, user_agent: user_agent,
                                       browser_proof: browser_proof, context: context)
