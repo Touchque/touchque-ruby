@@ -83,6 +83,17 @@ class WebhooksController < ActionController::Base
   end
 end
 
+# A user store endpoint answers what it verified (the shared vectors carry past timestamps: no freshness check).
+class UserStoreController < ActionController::Base
+  include Touchque::Rails::Webhook
+
+  verify_touchque_webhook tolerance_seconds: 0
+
+  def create
+    render json: touchque_webhook
+  end
+end
+
 class AccountController < ActionController::Base
   include Touchque::Rails::HostedLogin
 
@@ -102,6 +113,7 @@ TouchqueTestApp.routes.draw do
   post "/shaped" => "shaped_transfers#create"
   post "/answer" => "answers#create"
   post "/webhooks/touchque" => "webhooks#create"
+  post "/user-store" => "user_store#create"
   get "/account" => "account#show"
   Touchque::Rails.login_routes(self)
   mount Touchque::Rack::Relay.new(
@@ -567,6 +579,17 @@ class RailsTest < FakeApiTest
     deliver.call("0" * 64)
     assert_equal 401, last_response.status
     assert_equal ["APPROVAL_REVOKED"], WEBHOOK_EVENTS
+  end
+
+  # The user store requests Touchque sends (fixtures/user-store-vectors.json), through Rails: raw_post is binary, a
+  # lone surrogate in a password comes back as U+FFFD (so the payload renders as JSON), a tampered body answers 401.
+  def test_user_store_endpoint_verifies_the_shared_vectors
+    vectors = TestSupport.fixture("user-store-vectors.json")["vectors"].select { |v| v["secret"] == "test_secret" }
+    refute_empty vectors
+    vectors.each do |v|
+      post "/user-store", v["body"], "CONTENT_TYPE" => "application/json", "HTTP_X_SIGNATURE" => v["x_signature"]
+      assert_equal (v["valid"] ? [200, v["expected_payload"]] : [401, { "error" => "invalid_signature" }]), [last_response.status, json], v["name"]
+    end
   end
 
   def test_hosted_login_signs_in_with_encrypted_cookies

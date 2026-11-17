@@ -73,6 +73,25 @@ module Touchque
       nil
     end
 
+    # The bytes of +text+ as a UTF-8 String (a Rack body is binary), or nil when they are not UTF-8. Never changes
+    # +text+ itself.
+    def utf8_text(text)
+      s = text.to_s.dup.force_encoding(Encoding::UTF_8)
+      s.valid_encoding? ? s : nil
+    end
+
+    # An escape in JSON text: an escaped surrogate pair, a lone surrogate, or any other escape (taken whole, so the
+    # second backslash of "\\" never starts one).
+    JSON_ESCAPE = /\\u[dD][89abAB]\h\h\\u[dD][c-fC-F]\h\h|\\u[dD][89a-fA-F]\h\h|\\./m
+
+    # JSON text with each unpaired UTF-16 surrogate escape in its strings ("\ud800" with no low surrogate escape
+    # right after it, or a low one alone) written as the escape of U+FFFD ("\ufffd"). JavaScript's JSON.stringify
+    # writes a lone surrogate as such an escape; Ruby's JSON cannot hold one (it raises, or an older version makes a
+    # String that is not UTF-8). Escaped pairs and every other escape stay as they are.
+    def without_lone_surrogates(json)
+      json.gsub(JSON_ESCAPE) { |escape| escape.length == 6 ? "\\ufffd" : escape }
+    end
+
     # Keys as strings, deeply (symbol keys from Ruby callers become the API's names).
     def stringify(value)
       case value
@@ -117,9 +136,9 @@ module Touchque
       out << '"'
     end
 
-    # JSON text without insignificant whitespace; strings and numbers kept byte for byte.
+    # JSON text without insignificant whitespace; strings and numbers kept byte for byte (in +text+'s encoding).
     def compact_json(text)
-      out = +""
+      out = String.new(encoding: text.encoding)
       in_string = false
       escaped = false
       text.each_char do |c|

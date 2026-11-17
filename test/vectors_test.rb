@@ -57,6 +57,75 @@ class VectorsTest < Minitest::Test
     assert_equal Touchque::Resources::Webhook.canonicalize(fresh), Touchque::Resources::Webhook.canonicalize(pretty)
   end
 
+  # Touchque Login's requests to your user store exactly as the backend sends them (fixtures/user-store-vectors.json):
+  # each canonicalizes to what Touchque signed, and verifies as received (UTF-8, or binary as Rack reads it) with the
+  # signature from x-signature or from the body. A lone surrogate ("\ud800", as JSON.stringify writes one) is checked
+  # as sent and comes back as U+FFFD; a tampered body or another secret is refused.
+  def test_user_store_vectors
+    vectors = TestSupport.fixture("user-store-vectors.json")["vectors"]
+    refute_empty vectors
+    assert_operator vectors.count { |v| v["valid"] && v["body"].match?(/\\ud[89a-f]\h\h/) }, :>=, 5
+    vectors.each do |v|
+      name = v["name"]
+      canonical = Touchque::Resources::Webhook.canonicalize(v["body"])
+      assert_equal [v["canonical"], Encoding::UTF_8], [canonical, canonical.encoding], name
+      assert_equal v["valid"], Touchque::Util.hmac_hex(v["secret"], canonical) == v["x_signature"], name
+      webhook = Touchque::Client.new(api_key: "tq_x", api_secret: v["secret"]).webhook
+      bodies = [v["body"].dup, v["body"].b, v["body"].dup.freeze]
+      bodies.each do |body|
+        [v["x_signature"], nil].each do |signature|
+          # The fixtures carry fixed past timestamps: no freshness check.
+          unless v["valid"]
+            assert_raises(Touchque::WebhookSignatureError, name) { webhook.verify(body, signature, tolerance_seconds: 0) }
+            next
+          end
+          payload = webhook.verify(body, signature, tolerance_seconds: 0)
+          assert_equal v["expected_payload"], payload, name
+          payload.each_value { |value| assert value.valid_encoding? && value.encoding == Encoding::UTF_8, name if value.is_a?(String) }
+        end
+      end
+      # The body given is left as it was.
+      assert_equal [v["body"], v["body"].b, Encoding::UTF_8, Encoding::BINARY], [bodies[0], bodies[1].b, bodies[0].encoding, bodies[1].encoding], name
+    end
+  end
+
+  # Another lone surrogate, or U+FFFD itself, in place of one Touchque signed reads the same in the payload but is
+  # another body: refused, like a replay of a user store request.
+  def test_user_store_vectors_refuse_a_changed_surrogate_and_a_replay
+    lone = TestSupport.fixture("user-store-vectors.json")["vectors"].select { |v| v["valid"] && v["body"].match?(/\\ud[89a-f]\h\h/) }
+    refute_empty lone
+    lone.each do |v|
+      webhook = Touchque::Client.new(api_key: "tq_x", api_secret: v["secret"]).webhook
+      escape = v["body"][/\\ud[89a-f]\h\h/]
+      other = escape.sub(/\h\z/) { |d| ((d.to_i(16) + 1) % 16).to_s(16) }
+      [other, "\\ufffd", "\\u#{escape[2..].upcase}"].each do |swap|
+        assert_raises(Touchque::WebhookSignatureError, "#{v["name"]}: #{swap}") do
+          webhook.verify(v["body"].sub(escape) { swap }, v["x_signature"], tolerance_seconds: 0)
+        end
+      end
+      cache = Touchque::MemoryReplayCache.new
+      assert_equal v["expected_payload"], webhook.verify(v["body"], tolerance_seconds: 0, replay_cache: cache)
+      assert_raises(Touchque::WebhookReplayError) { webhook.verify(v["body"], tolerance_seconds: 0, replay_cache: cache) }
+    end
+  end
+
+  # JSON.stringify writes a lone surrogate as an escape; Ruby's JSON reads the text with U+FFFD in its place. Escaped
+  # pairs, escaped backslashes and every other escape stay as they are.
+  def test_lone_surrogate_escapes_read_as_the_replacement_character
+    {
+      '"a\\ud800b"' => "a\uFFFDb",
+      '"\\udc00\\udbff"' => "\uFFFD\uFFFD",
+      '"\\ud83d\\ud83d\\ude00"' => "\uFFFD\u{1F600}",
+      '"\\uD83D\\uDE00 \\uDFFF"' => "\u{1F600} \uFFFD",
+      '"\\\\ud800"' => "\\ud800",
+      '"\\\\\\ud800"' => "\\\uFFFD",
+      '"\\u0041\\"\\ud800\\n"' => "A\"\uFFFD\n",
+      '{"k\\ud800":["\\udfff",1]}' => { "k\uFFFD" => ["\uFFFD", 1] },
+    }.each do |json, want|
+      assert_equal want, JSON.parse(Touchque::Util.without_lone_surrogates(json)), json
+    end
+  end
+
   # The event names the API sends (its recovery and help desk webhooks, the Mobile SDK's push).
   def test_webhook_event_names
     w = Touchque::Resources::Webhook

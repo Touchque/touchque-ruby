@@ -23,7 +23,7 @@ module Touchque
         @clients = IdentityClients.new(http)
         @apis = IdentityCrud.new(http, "/identity/apis", "apis")
         @connections = IdentityCrud.new(http, "/identity/connections", "connections")
-        @custom_domains = IdentityCrud.new(http, "/identity/custom-domains", "domains")
+        @custom_domains = IdentityCustomDomains.new(http)
       end
 
       # The tenant (404 not_enabled until it is set up).
@@ -50,6 +50,19 @@ module Touchque
       # refuses other calls. Turning it on needs a verified primary domain with a working certificate.
       def set_custom_domain_only(on)
         @http.put("/identity/tenant", { "customDomainOnly" => on })
+      end
+
+      # The relying party ID of customer passkeys made on this domain or any host under it: nil (each passkey belongs
+      # to the address it was made on), one of your verified custom domains, or a domain above one that your
+      # organization verified ("acme.com" for "login.acme.com"), so passkeys keep working when sign-in moves to
+      # another host under it. Returns the tenant (passkeyDomain). Set it before customers make passkeys. Refusals
+      # (Touchque::APIError, the reason in error): 409 passkeys_exist when existing customer passkeys would stop
+      # working (how many in data["count"]); 409 not_your_domain for a domain you have not proved; 409
+      # organization_unavailable when your organization's verified domains could not be read (try again); 400
+      # invalid_request (data["field"] "passkeyDomain") for what is not a domain. Before Touchque Login is set up for
+      # the workspace: 400 invalid_request with data["field"] "slug" (update_tenant(slug:, displayName:) first).
+      def set_passkey_domain(domain)
+        @http.put("/identity/tenant", { "passkeyDomain" => domain })
       end
 
       # Checks a verified custom domain's certificate at the sign-in edge now (certificate: pending | active | error).
@@ -98,6 +111,39 @@ module Touchque
       def test_delivery(channel, to)
         @http.post("/identity/delivery/#{Util.seg(channel)}/test", { "to" => to })
       end
+
+      # Moving your customers in from your own user database: url, enabled, active (asked only while passwords are on),
+      # movedIn (accounts made from it so far), lastCall { at, event, ok, status, ms, error }, paused (5 failures in a
+      # row pause it for a minute), updatedAt, signing. For an address with no account here yet Touchque POSTs
+      # user_store.verify_password { email, password } (a password sign-in) or user_store.get_user { email } (a reset,
+      # an email code, a sign-up) to url, signed like its webhooks (check each with webhook.verify), and takes
+      # 200 { "user" => { "id", "email", ... } } or { "user" => nil } (404 counts as nil; the same for an unknown
+      # address and a wrong password) within 5 seconds.
+      def get_user_store
+        @http.get("/identity/user-store")
+      end
+
+      # Sets the endpoint (https) and whether it is asked. nil is left out and keeps the value set (the first time, url
+      # is required and enabled defaults to true). Asking it needs passwords on (409 passwords_off). Returns the
+      # settings.
+      def set_user_store(url: nil, enabled: nil)
+        body = {}
+        body["url"] = url unless url.nil?
+        body["enabled"] = enabled unless enabled.nil?
+        @http.put("/identity/user-store", body)
+      end
+
+      # One signed user_store.ping to url (nil or "": the endpoint set): { "ok", "error", "ms" }. An endpoint that
+      # fails is "ok" => false with the reason in "error", not an exception.
+      def test_user_store(url: nil)
+        @http.post("/identity/user-store/test", Util.compact({ "url" => url }))
+      end
+
+      # Stops asking your user database; accounts already moved in stay. 204 whether or not one was set: a 404 is
+      # not_enabled (Touchque Login is not set up), never "already removed".
+      def remove_user_store
+        @http.delete("/identity/user-store")
+      end
     end
 
     # List, get, create, update and delete for one kind of Touchque Login object.
@@ -126,6 +172,39 @@ module Touchque
 
       def delete(id)
         @http.delete("#{@base}/#{Util.seg(id)}")
+      end
+    end
+
+    # Your own sign-in domains (login.acme.com): list, overview, get, create({ domain: }), verify, update(id,
+    # { primary: true }) and delete. Each carries dns (the last DNS check: points, cloudflareProxy, caaBlocks,
+    # problems) and autoCheckUntil (checked by itself every 5 minutes until then).
+    class IdentityCustomDomains < IdentityCrud
+      def initialize(http)
+        super(http, "/identity/custom-domains", "domains")
+      end
+
+      # The list's whole answer, always with its three keys: "domains" (an Array: what list returns),
+      # "verifiedDomains" (your organization's verified domains, an Array of Strings: a passkey domain above a custom
+      # domain must be one of them; nil when they could not be read) and "slugPasskeys" (an Integer: customer passkeys
+      # made on {slug}.login.touchque.com, which stay with that address and do not work on a custom domain).
+      def overview
+        answer = @http.get(@base)
+        answer = {} unless answer.is_a?(Hash)
+        answer.merge("domains" => answer["domains"].is_a?(Array) ? answer["domains"] : [],
+                     "verifiedDomains" => answer["verifiedDomains"], "slugPasskeys" => answer["slugPasskeys"])
+      end
+
+      # The domain with this id, found in list (the API has no read by id). An id the workspace does not have raises
+      # Touchque::APIError 404 with error "not_found", as the API answers one.
+      def get(id)
+        list.find { |domain| domain.is_a?(Hash) && domain["id"] == id.to_s } ||
+          raise(APIError.new(404, { "error" => "not_found", "message" => "No custom domain with this id" }))
+      end
+
+      # Checks the DNS TXT record now (a domain your organization verified, or one under it, needs none) and what
+      # the domain's DNS says (dns); returns the domain.
+      def verify(id)
+        @http.post("#{@base}/#{Util.seg(id)}/verify", {})
       end
     end
 

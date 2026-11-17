@@ -121,22 +121,29 @@ module Touchque
         "#<#{self.class.name}>"
       end
 
-      # Verifies an incoming webhook and returns its payload.
+      # Verifies an incoming webhook, or a request to your user store (signed the same way), and
+      # returns its payload.
       #
-      # raw_body: the request body exactly as received. signature: the x-signature header
-      # (nil uses the "signature" field inside the body). tolerance_seconds: reject a
-      # callback whose signed timestamp is missing, invalid or further than this from now
-      # (0 disables it). replay_cache: a second delivery of the same jti raises
+      # raw_body: the request body exactly as received (binary or UTF-8). signature: the
+      # x-signature header (nil uses the "signature" field inside the body). tolerance_seconds:
+      # reject a callback whose signed timestamp is missing, invalid or further than this from
+      # now (0 disables it). replay_cache: a second delivery of the same jti raises
       # WebhookReplayError (answer 200, don't run your side effects again).
+      #
+      # A string may hold an unpaired UTF-16 surrogate (a user store request carries whatever
+      # password a customer typed), which JavaScript's JSON.stringify writes as an escape such
+      # as "\ud800": the signature is checked over the body as sent, and the payload comes back
+      # with U+FFFD in its place, so each String is valid UTF-8.
       def verify(raw_body, signature = nil, tolerance_seconds: DEFAULT_TOLERANCE_SECONDS, replay_cache: nil)
-        payload = Util.parse_json(raw_body.to_s)
+        text = Util.utf8_text(raw_body)
+        payload = text && Util.parse_json(Util.without_lone_surrogates(text))
         raise WebhookSignatureError, "invalid JSON payload" unless payload.is_a?(Hash)
 
         provided = signature.to_s.empty? ? payload["signature"] : signature
         raise WebhookSignatureError, "no signature provided" unless provided.is_a?(String) && !provided.empty?
 
         begin
-          canonical = self.class.canonicalize(raw_body.to_s)
+          canonical = self.class.canonicalize(text)
         rescue JSON::ParserError
           raise WebhookSignatureError, "could not canonicalize the payload"
         end
@@ -159,18 +166,23 @@ module Touchque
         payload
       end
 
-      # The server's stableStringify: drop "signature", sort the TOP-LEVEL keys only (by
-      # UTF-16 code units, like JavaScript), keep each value's bytes (nested key order,
-      # number spelling); insignificant whitespace is removed.
+      # The server's stableStringify, built from the body's own text: drop "signature", sort
+      # the TOP-LEVEL keys only (by UTF-16 code units, like JavaScript), keep each value's bytes
+      # as sent (nested key order, number spelling, escapes such as a lone surrogate's "\ud800",
+      # which a parsed String cannot hold); insignificant whitespace is removed. Raises
+      # JSON::ParserError for a body that is not UTF-8 or not a JSON object.
       def self.canonicalize(raw_body)
-        raise JSON::ParserError, "not an object" unless JSON.parse(raw_body).is_a?(Hash)
+        text = Util.utf8_text(raw_body)
+        raise JSON::ParserError, "the payload is not UTF-8" if text.nil?
+        raise JSON::ParserError, "not an object" unless JSON.parse(Util.without_lone_surrogates(text)).is_a?(Hash)
 
         members = {}
-        Util.top_level_members(raw_body).each { |key, value| members[key] = value unless key == "signature" }
+        # Bytes: JSON's structural characters are ASCII and never part of a UTF-8 sequence.
+        Util.top_level_members(text.b).each { |key, value| members[key] = value unless key == "signature" }
         body = members.keys.sort_by { |k| k.encode("UTF-16BE").bytes }.map do |key|
-          "#{Util.js_string(key)}:#{Util.compact_json(members[key])}"
+          "#{Util.js_string(key).b}:#{Util.compact_json(members[key])}"
         end
-        "{#{body.join(",")}}"
+        "{#{body.join(",")}}".force_encoding(Encoding::UTF_8)
       end
     end
   end

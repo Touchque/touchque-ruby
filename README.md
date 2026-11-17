@@ -464,7 +464,92 @@ and access token checks, refresh, token exchange, CIBA, the token vault, client 
 logout); your API checks access tokens with `verify_access_token(token, audience:, required_scopes:)`.
 `login.my_account(access_token)` is the customer's own account API. The Management API is
 `tq.identity` (users, roles, organizations, apps, connections, imports and exports, attack
-protection, email and SMS providers).
+protection, email and SMS providers, custom domains, the passkey domain, your user store).
+Its refusals are `Touchque::APIError` with the reason in `error` (`not_enabled`, `invalid_request`
+with `data["field"]`...).
+
+### Custom domains
+
+```ruby
+d = tq.identity.custom_domains.create(domain: "login.acme.com")   # d["records"]: the DNS records to add
+tq.identity.custom_domains.verify(d["id"])    # checks the TXT record and the DNS now; returns the domain
+tq.identity.custom_domains.get(d["id"])       # found in the list (the API has no read by id)
+tq.identity.custom_domains.overview           # { "domains", "verifiedDomains", "slugPasskeys" }
+```
+
+`list` returns the domains alone; `overview` the whole answer, always with its three keys:
+`"verifiedDomains"` (your organization's verified domains, `nil` when they could not be read) and
+`"slugPasskeys"` (customer passkeys made on `{slug}.login.touchque.com`). A domain your organization
+verified, or one under it (Organization → Domains: `login.acme.com` under `acme.com`), is verified
+when added and needs only its CNAME. Each domain carries `dns` (the last DNS check) and
+`autoCheckUntil`: Touchque checks a new domain by itself every 5 minutes for 72 hours. `get` raises
+`Touchque::APIError` 404 `not_found` for an id you do not have, as the API does.
+`update(id, primary: true)` makes a verified domain the issuer.
+
+### Passkey domain
+
+```ruby
+tq.identity.set_passkey_domain("acme.com")   # nil: each sign-in address keeps its own
+```
+
+A passkey works only on the domain it was made for (its relying party ID) and the hosts under it.
+Without a passkey domain a customer's passkey belongs to the address it was made on
+(`acme.login.touchque.com`, `login.acme.com`); with one, passkeys made on it or on a host under it
+belong to it and keep working when sign-in moves to another host under it. Only a domain you proved:
+one of your verified custom domains, or a domain above one that your organization verified
+(Organization → Domains: `acme.com` for `login.acme.com`). Anything else is refused (409
+`not_your_domain`; 400 `invalid_request` with `data["field"]` `"passkeyDomain"` for what is not a
+domain): a TXT record on `login.acme.com` proves nothing about `acme.com`. `{slug}.login.touchque.com`
+keeps its own passkeys: `tq.identity.custom_domains.overview` counts them (`"slugPasskeys"`) and lists
+your organization's verified domains (`"verifiedDomains"`). Set it before customers make passkeys: a
+passkey belongs to its domain for good, so a change that would leave existing customer passkeys behind
+is refused (409 `passkeys_exist`, how many in `data["count"]`). 409 `organization_unavailable`: your
+organization's verified domains could not be read; try again. Before Touchque Login is set up for the
+workspace the answer is 400 `invalid_request` with `data["field"]` `"slug"`: set it up first
+(`tq.identity.update_tenant(slug: "acme", displayName: "Acme")`).
+
+### Moving customers in from your user database
+
+Your customers sign in with the password they already have. Until one has a Touchque Login account,
+Touchque asks your endpoint about that address:
+
+```ruby
+tq.identity.set_user_store(url: "https://api.acme.com/touchque/user-store", enabled: true)
+tq.identity.test_user_store   # one signed user_store.ping: { "ok" => true, "error" => nil, "ms" => 84 }
+tq.identity.get_user_store    # url, enabled, active, movedIn, lastCall, paused
+tq.identity.remove_user_store # stop asking; accounts moved in stay
+
+class UserStoreController < ActionController::API
+  include Touchque::Rails::Webhook
+  verify_touchque_webhook       # signed like a webhook: signature, timestamp, jti
+
+  def create
+    e = touchque_webhook
+    user = User.find_by(email: e["email"]) if e["email"]
+    user = nil unless e["event"] == "user_store.get_user" || user&.authenticate(e["password"].to_s)
+    render json: { user: user && { id: user.id, email: user.email, name: user.name } }
+  end
+end
+```
+
+`user_store.verify_password` { email, password } comes at a password sign-in, `user_store.get_user`
+{ email } at "forgot password", an email code or a sign-up. Answer 200 `{ "user": { "id", "email" } }`
+or `{ "user": null }` (404 counts as null) within 5 seconds, the same for an unknown address and a
+wrong password. `id` is yours (kept as `externalId`), `email` the address asked about; optional:
+`emailVerified`, `name`, `givenName`, `familyName`, `nickname`, `picture` (https), `locale`, `phone`,
+`userMetadata`, `appMetadata`. A password you confirm is kept by Touchque (Argon2id) and that customer
+is never asked about again. Anything else (another status, a redirect, a body that is not JSON, a user
+without `id` or with another address) or no answer in 5 seconds counts as unavailable, never as a wrong
+password; 5 in a row leave your endpoint alone for a minute (`paused`). The request carries the
+password the customer typed: never log it. It may hold any text, even an unpaired UTF-16 surrogate
+(JavaScript writes one as `\ud800`): the signature is checked over the body as sent, and the payload
+comes back with U+FFFD in its place, so every String in it is valid UTF-8.
+
+`set_user_store` takes an https URL; an argument left `nil` keeps its value. Asking needs passwords on
+(409 `passwords_off`), and while it is on passwords cannot be turned off (409 `user_store_on`).
+`test_user_store(url: ...)` pings a URL before you set it; a failing endpoint is `"ok" => false` with
+the reason in `"error"`, not an exception. `remove_user_store` answers 204 whether or not one was set (a
+404 is `not_enabled`).
 
 ## Mobile SDK (your own app approves)
 

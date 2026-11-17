@@ -165,6 +165,53 @@ class ResourcesTest < FakeApiTest
     refute Touchque::Resources::Mobile.push_expired?(push, Time.utc(2026, 10, 26, 10, 0))
   end
 
+  def test_user_store
+    api.reset
+    i = tq.identity
+    url = "https://api.acme.test/touchque/user-store"
+    i.get_user_store
+    i.set_user_store(url: url, enabled: true)
+    # What is left out (nil) stays as it is on the API; false is sent.
+    i.set_user_store(enabled: false)
+    i.set_user_store(url: "https://api.acme.test/v2/user-store")
+    i.set_user_store
+    # No url (nil or ""): the endpoint set is pinged.
+    i.test_user_store
+    i.test_user_store(url: "")
+    i.test_user_store(url: url)
+    i.remove_user_store
+    calls = api.calls.select { |c| c["path"].start_with?("/identity/user-store") }
+    assert_equal ["GET /identity/user-store", "PUT /identity/user-store", "PUT /identity/user-store", "PUT /identity/user-store", "PUT /identity/user-store",
+                  "POST /identity/user-store/test", "POST /identity/user-store/test", "POST /identity/user-store/test", "DELETE /identity/user-store"],
+                 calls.map { |c| "#{c["method"]} #{c["url"]}" }
+    assert_equal [{ "url" => url, "enabled" => true }, { "enabled" => false }, { "url" => "https://api.acme.test/v2/user-store" }, {}, {}, {}, { "url" => url }],
+                 calls[1..7].map { |c| c["body"] }
+    # url is a keyword, as in set_user_store.
+    assert_raises(ArgumentError) { i.test_user_store(url) }
+  end
+
+  # Signed like every call (the fake API checks it), with the id path-encoded; get looks in the list.
+  def test_custom_domains
+    api.reset
+    d = tq.identity.custom_domains
+    d.verify("dom 1/a")
+    e = assert_raises(Touchque::APIError) { d.get("dom_1") }
+    assert_equal [404, "not_found"], [e.status, e.error]
+    assert_equal({ "ok" => true, "domains" => [], "verifiedDomains" => nil, "slugPasskeys" => nil }, d.overview)
+    calls = api.calls.select { |c| c["path"].start_with?("/identity/custom-domains") }
+    assert_equal ["POST /identity/custom-domains/dom%201%2Fa/verify", "GET /identity/custom-domains", "GET /identity/custom-domains"],
+                 calls.map { |c| "#{c["method"]} #{c["url"]}" }
+    assert_equal({}, calls[0]["body"])
+  end
+
+  def test_passkey_domain
+    api.reset
+    tq.identity.set_passkey_domain("acme.com")
+    tq.identity.set_passkey_domain(nil)
+    calls = api.calls.select { |c| c["path"] == "/identity/tenant" }
+    assert_equal [["PUT", { "passkeyDomain" => "acme.com" }], ["PUT", { "passkeyDomain" => nil }]], calls.map { |c| [c["method"], c["body"]] }
+  end
+
   def test_management_api_calls
     api.reset
     i = tq.identity
